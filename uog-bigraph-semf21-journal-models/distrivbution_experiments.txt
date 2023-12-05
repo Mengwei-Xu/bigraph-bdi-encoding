@@ -1,0 +1,132 @@
+Agent-level rule selection (ARS) strategies:
+1. Sequenced: A_event -> A_step -> A_update
+2. Fixed distributions
+3. Dynamic distributions
+
+Event/Intention Selection (EIS) strategies:
+1. Select most urgent
+2. FIFO 
+3. RR
+4. Fixed distributions
+5. dynamic distributions
+	5.1 PUSD
+	5.2 LUSD
+	5.3 OLUSD
+
+Plan Selection (PS) strategies
+1. Select most preferred
+2. Fixed Distributions
+3. Dynamic distributions
+
+Action Outcomes strategies:
+1. Fixed distributions
+ 
+
+the appropriate deadline for event 1 and event 2 are as follow:
+Desires.(Event{ps1}.(EId(1) | Deadline(10) | Idle | Progress(0)) | Event{ps3}.(EId(2) | Deadline(14) | Idle | Progress(0)))
+
+Some note for model
+1. current plan design requires 6 agent-level step to reach the packaging action and 7 to actually execute it. 
+
+
+Some caveat in the model re time decrease
+1. when an agent-level rule is selected, the deadline decreases by one.
+2. this implies that when the A_step rule is applied, it explicitly assumes that the resulting plan-selection check or action pre-condition check
+   happens right in the end of this step. For example, if deadline is 3, once A_step is selected, deadline is 2, and then plan selection is based on
+   deadline=2. It is same in original SEFM paper. 
+
+
+
+Data collection:
+
+							(S1,S2)			(S1,F2) 		(F1,S2) 		(F1,F2)
+ARS1_EIS1_PS1_AO1              0              0.9              0              0.1 
+ARS1_EIS2_PS1_AO1              0               0              0.9             0.1
+ARS1_EIS3_PS1_AO1              0               0               1               0   
+#ARS1_EIS4_PS1_AO1             0.01            0.27            0.47            0.25
+ARS1_EIS5_PS1_AO1             0.06            0.45            0.22            0.27
+ARS1_EIS6_PS1_AO1             0.51             0              0.48            0.01
+ARS1_EIS7_PS1_AO1             0.97             0              0.03             0
+------------------------------------------------------------------------------------
+ARS2_EIS1_PS1_AO1              0              0.9              0              0.1              
+ARS2_EIS2_PS1_AO1              0               0              0.9             0.1              
+ARS2_EIS3_PS1_AO1              0              0.1             0.38            0.52
+# the reason why fixed agent-level operation distribution is not good in RR fashion is because the agent can continue to progress the same event 
+# just after it has been adopted, or apply A_update to the same intention after progressing it
+# both of the situations can lead to the second product being spoiled just before being packed. 
+#ARS2_EIS4_PS1_AO1             0.01            0.3             0.39            0.3
+ARS2_EIS5_PS1_AO1             0.06            0.46            0.19            0.29         
+ARS2_EIS6_PS1_AO1             0.5             0.01            0.47            0.02    
+ARS2_EIS7_PS1_AO1             0.93            0.02            0.05             0       
+
+------------------------------------------------------------------------------------
+ARS3_EIS1_PS1_AO1              0              0.9              0              0.1 
+ARS3_EIS2_PS1_AO1              0               0              0.9             0.1
+ARS3_EIS3_PS1_AO1              0               0.1            0.1             0.8
+#ARS3_EIS4_PS1_AO1              0.01            0.3            0.34            0.35
+ARS3_EIS5_PS1_AO1              0.05            0.47           0.17            0.31
+ARS3_EIS6_PS1_AO1              0.48            0.04           0.46            0.02
+ARS3_EIS7_PS1_AO1              0.9             0.05           0.04            0.01
+
+------------------------------------------------------------------------------------
+# with weight 2 for cheaper bag and weight 1 for expansive
+ARS1_EIS1_PS2_AO1              0              0.93             0              0.07
+ARS1_EIS2_PS2_AO1              0                0            0.93             0.07
+ARS1_EIS3_PS2_AO1              0                0              1                0   
+ARS1_EIS4_PS2_AO1             0.01            0.27           0.48             0.24
+ARS1_EIS5_PS2_AO1             0.06            0.45           0.22             0.27
+ARS1_EIS6_PS2_AO1             0.51             0              0.48            0.01
+ARS1_EIS7_PS2_AO1             0.98             0              0.02              0
+
+------------------------------------------------------------------------------------
+# dynamic situation distribution for plan selection
+ARS1_EIS1_PS3_AO1              0              0.93             0              0.07
+ARS1_EIS2_PS3_AO1              0                0            0.93             0.07
+ARS1_EIS3_PS3_AO1              0                0              1                0   
+#ARS1_EIS4_PS3_AO1             0.01            0.27           0.48             0.24
+ARS1_EIS5_PS3_AO1             0.06            0.45           0.22             0.27
+ARS1_EIS6_PS3_AO1             0.51             0              0.48            0.01 
+ARS1_EIS7_PS3_AO1             0.98             0              0.02              0
+
+------------------------------------------------------------------------------------
+# AIR1 (sequenced agent-level operation) + EIS1 (select more uregent) +  PS3 (dynamic preference distribution) 
+ARS1_EIS1_PS3_AO1
+							(S1,S2)			(S1,F2) 		(F1,S2) 		(F1,F2)
+10% failure                 0              0.93333            0              0.06667
+20% failure                 0              0.86666            0              0.13334
+30% failure                 0              0.79999            0              0.20001
+40% failure                 0              0.73332            0              0.26668
+50% failure                 0              0.66665            0              0.33335
+60% failure                 0              0.59998            0              0.40002
+70% failure                 0              0.53331            0              0.46669
+80% failure                 0              0.46664            0              0.53336
+90% failure                 0              0.39997            0              0.60003
+
+# AIR1 (sequenced agent-level operation) + EIS3 (round robin) + PS3 (dynamic preference distribution) 
+ARS1_EIS3_PS3_AO1     
+
+							(S1,S2)			(S1,F2) 		(F1,S2) 		(F1,F2)
+10% failure                 0                0                1                0   
+20% failure                 0                0                1                0  
+30% failure                 0                0                1                0  
+40% failure                 0                0                1                0  
+50% failure                 0                0                1                0  
+60% failure                 0                0                1                0  
+70% failure                 0                0                1                0  
+80% failure                 0                0                1                0  
+90% failure                 0                0                1                0  
+
+
+# AIR1 (sequenced agent-level operation) + EIS7 (OLUSD) + PS3 (dynamic preference distribution)    
+ARS1_EIS7_PS3_AO1     
+
+							(S1,S2)			(S1,F2) 		(F1,S2) 		(F1,F2)
+10% failure                 0.98               0              0.02             0
+20% failure                 0.96               0              0.04             0
+30% failure                 0.94               0              0.06             0
+40% failure                 0.92               0              0.08             0
+50% failure                 0.9                0              0.1              0 
+60% failure                 0.88               0              0.12             0
+70% failure                 0.86               0              0.14             0
+80% failure                 0.84               0              0.16             0
+90% failure                 0.82               0              0.18             0

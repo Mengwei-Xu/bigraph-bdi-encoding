@@ -1,0 +1,697 @@
+# CAN Semantic Model from "Modelling and Verifying BDI Agents with Bigraphs. Xu et al"
+# only agent-level rules are norm rules
+# the rest of rules are instantenous rules
+# the idea is that when an Reduce is added, 
+# after the applications of all instantenous rules in the background, the next step is produced.  
+
+## CONTROLS
+
+ctrl Check = 0;
+ctrl Del = 0;
+ctrl Add = 0;
+atomic ctrl T = 0; # true
+atomic ctrl F = 0; # false
+
+ctrl Intentions = 0;
+ctrl Intent = 0;
+
+ctrl Desires = 0;
+
+ctrl Beliefs = 0;
+atomic fun ctrl B(n) = 0;
+
+ctrl Reduce = 0;
+atomic ctrl ReduceF = 0;
+
+ctrl Act = 0;
+ctrl Pre = 0;
+
+ctrl Event = 1;
+
+ctrl Plans = 0;
+ctrl PlanSet = 1;
+ctrl Plan = 0;
+ctrl PB = 0;
+
+# Tree
+ctrl Try = 0; #OR-Like
+ctrl Seq = 0; #AND-Like
+ctrl Cons = 0;
+
+ctrl Conc = 0;
+ctrl L = 0;
+ctrl R = 0;
+
+# CheckToken can be discarded if we are verbose in the related rules
+atomic ctrl CheckToken = 0;
+
+ctrl Goal = 0;
+ctrl SC = 0;
+ctrl FC = 0;
+
+
+# Nil for 1 
+atomic ctrl Nil = 0;
+
+# Try for special case:
+ctrl Trys = 0;
+
+
+# Control for tracking the cycle of the agent step
+ctrl Cycle = 0;
+atomic fun ctrl Num(n) = 0;
+
+# Control for the environment perspective
+ctrl Environment = 0;
+atomic ctrl Unperceived = 0;
+atomic ctrl Perceived = 0;
+atomic ctrl Unupdated = 0;
+atomic ctrl Updated = 0;
+
+
+
+
+# Controls for giving the identifier to the event (which is also for the related intention)
+# event, plan, and action identifier
+ctrl Identifier = 0;
+atomic fun ctrl EId(n) = 0;
+
+
+
+
+
+
+# tokens for when it is for agent reasoning or environment update
+
+atomic ctrl AgentReasoning = 0;
+atomic ctrl EnvUpdate = 0;
+
+
+## END Controls
+
+# Check contains the formula to be checked against the belief base
+# Check cannot be nested under the Beliefs 
+# as it will cause problems in the rule check_F(n) when declared as instan rules.
+# when there are some same formulas in two different check due to our weak condition check
+# Instead I nest Check under the entity (e.g. plans) for which the check is needed
+# and giving the final check result as child of Check
+# thus no link and no CheckRes control needed
+
+fun react check_T(n) =
+    Beliefs.(B(n) | id) || Check.(B(n) | id)
+    -[1]->
+    Beliefs.(B(n) | id) || Check.id;
+
+react check_end =
+    Beliefs.id || Check.1
+    -[1]->
+    Beliefs.id || Check.T;
+
+fun react check_F(n) =
+    Beliefs.id || Check.(B(n) | id)
+    -[1]->
+    Beliefs.id || Check.F
+    @[0] if !B(n) in param;
+
+
+# now the action effects are applied in the Environment instead
+fun react add_notin(n) =
+    Environment.(Add.(B(n) | id) | id)
+    -[1]->
+    Environment.(Add.id | B(n) | id) @[0,1] if !B(n) in param;
+
+fun react add_in(n) =
+    Environment.(Add.(B(n) | id) | B(n) | id)
+    -[1]->
+    Environment.(Add.id | B(n) | id) @[0,1];
+
+react add_end =
+    Environment.(Add.1 | id)
+    -[1]->
+    Environment.id;
+
+fun react del_in(n) =
+    Environment.(Del.(B(n) | id) | B(n) | id)
+    -[1]->
+    Environment.(Del.id | id);
+
+fun react del_notin(n) =
+    Environment.(Del.(B(n) | id) | id)
+    -[1]->
+    Environment.(Del.id | id) if !B(n) in param;
+
+react delete_end =
+    Environment.(Del.1 | id)
+    -[1]->
+    Environment.id @[0];
+
+
+
+# also since once a command is perceived, it will be removed from the environment
+# so i do not need to worry about the deleting side of command operations
+# this rule is to add the command instructions from humans.
+# it has the lower priority than any of rule above
+# so that when all belief atoms are updated, all instructions will simply be added at one go.  
+react add_commands_update =
+    Environment.(Add.id | id)
+    -[1]->
+    Environment.(id | id);
+
+
+## END Beliefs
+
+## Core actions
+react act_check =
+  Reduce.Act.(Pre.id | Add.id | Del.id)
+  -[1]->
+  Reduce.Act.(Pre.id | Add.id | Del.id | Check.id)
+  @[0,1,2,0];
+
+# Reduce is swallowed here
+# but instan rules for belief adding and deletion operator still apply 
+react act_T =
+     Environment.id
+  || Reduce.Act.(id | Add.id | Del.id | Check.T)
+  -[1]->
+     Environment.(id | Add.id | Del.id)
+  || Nil
+  @[0,2,3];
+
+# Reduce is swallowed here
+# but ReduceF will still have to be picked up by the failure recovery rules 
+react act_F =
+  Reduce.Act.(id | Check.F)
+  -[1]->
+  ReduceF @[];
+
+# Event
+# Reduce is swallowed here and has to be added again for next agent step
+react reduce_event =
+    Reduce.Event{ps}.1
+ || Plans.(PlanSet{ps}.id | id)
+ -[1]->
+    PlanSet{ps}.id
+ || Plans.(PlanSet{ps}.id | id)
+ @[0,0,1];
+
+# Plan Selection
+# CheckToken can be discarded if we enumerate all components of Plan
+react select_plan_check =
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | CheckToken | id) | id)
+ -[1]->
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | Check.id | id) | id)
+  @[0,0,1,2];
+
+# Reduce is swallowed here and has to be added again for next agent step
+react select_plan_T =
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+
+# Reduce is swallowed here
+# but ReduceF will still have to be picked up for the failure recovery rule
+# or picked up by the intention failure rule
+react select_plan_F =
+    Reduce.PlanSet{ps}.id
+  -[1]->
+    ReduceF | {ps} @[]
+    if !CheckToken in param, !Check.T in param;
+
+react reset_planset =
+  Try.(id | Cons.PlanSet{ps}.(Plan.(Check.id | id) | id))
+  -[1]->
+  Try.(id | Cons.PlanSet{ps}.(Plan.(CheckToken | id) | id))
+  @[0,2,3];
+
+react init_plansets =
+  Plans.(PlanSet{ps}.(Plan.(Pre.id | PB.id) | id) | id)
+  -[1]->
+  Plans.(PlanSet{ps}.(Plan.(CheckToken | Pre.id | PB.id) | id) | id);
+
+## Sequencing
+react reduce_seq =
+  Reduce.Seq.(id | Cons.id)
+  -[1]->
+  Seq.(Reduce.id | Cons.id);
+
+react seq_succ =
+  Reduce.Seq.(Nil | Cons.id)
+  -[1]->
+  Reduce.id;
+
+# this rule is rather artifical and purely intermedia for better structural update
+react seq_fail =
+  Seq.(ReduceF | Cons.id)
+  -[1]->
+  ReduceF @[];
+
+## Failure Recovery
+react try_seq =
+  Reduce.Try.(id | Cons.id)
+  -[1]->
+  Try.(Reduce.id | Cons.id);
+
+react try_succ_unique =
+  Try.(Nil | Cons.id)
+  -[1]->
+  Trys.(Nil | Cons.id);
+
+react try_succ =
+  Reduce.Trys.(Nil | Cons.id)
+  -[1]->
+  Nil @[];
+
+react try_failure =
+  Try.(ReduceF | Cons.id)
+  -[1]->
+  Reduce.id;
+
+
+
+# Concurrency
+# all instan rules
+react conc_nil_R=
+  Reduce.Conc.(L.Nil | R.id)
+  -[1]->
+  Conc.(L.Nil | R.Reduce.id);
+
+react conc_nil_L =
+  Reduce.Conc.(L.id | R.Nil)
+  -[1]->
+  Conc.(L.Reduce.id | R.Nil);
+
+react conc_L =
+  Reduce.Conc.(L.id | id)
+  -[1]->
+  Conc.(L.Reduce.id | id);
+
+react conc_R =
+  Reduce.Conc.(R.id | id)
+  -[1]->
+  Conc.(R.Reduce.id | id);
+
+react conc_succ =
+  Reduce.Conc.(L.Nil | R.Nil)
+  -[1]->
+  Nil;
+
+react conc_fail_L =
+  Conc.(L.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+react conc_fail_R =
+  Conc.(R.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+
+# Declarative goals #
+# all instan rules
+react goal_check =
+  Reduce.Goal.(SC.id | id | FC.id)
+   -[1]->
+  Reduce.Goal.(SC.(id | Check.id) | id | FC.(id | Check.id))
+  @[0,0,1,2,2]
+  if !Check in param;
+
+react goal_suc =
+  Reduce.Goal.(SC.(id | Check.T) | id)
+  -[1]->
+  Nil @[];
+
+react goal_fail =
+  Reduce.Goal.(FC.(id | Check.T) | id)
+  -[1]->
+  Act.(Pre.F | Add.1 | Del.1) @[];
+
+react goal_init =
+  Reduce.Goal.(SC.(id | Check.F) | id | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2]
+  if !Try in param, !Trys in param;
+
+react goal_reduce =
+  Reduce.Goal.(SC.(id | Check.F) | Try.(id | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(Reduce.id | Cons.id) | FC.id);
+
+react goal_persist_nil =
+  Reduce.Goal.(SC.(id | Check.F) | Trys.(Nil | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2];
+
+react goal_persist =
+  Reduce.Goal.(SC.(id | Check.F) | Try.(ReduceF | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2];
+
+
+# Agent-Level Steps
+# all normal rules
+# Constraint intention_step < {intention_step, intention_done_succ}
+# after the main agent-level step, the environment is reset
+# to be Unperceived to allow the new perceiving process
+# now the event has the status and identifier as well
+
+# the rule a_event is also considered as one step in agent deliberation process
+
+react a_event =
+     Desires.(id | Event{e}.id)
+  || Intentions.id
+  || Beliefs.(id | Cycle.AgentReasoning)
+  || Environment.(id | Updated | Perceived)
+  -[1]->
+     Desires.id
+  || Intentions.(id | Intent.Event{e}.1)
+  || Beliefs.(id | Cycle.EnvUpdate)
+  || Environment.(id | Unupdated | Unperceived)
+  @[0,2,3,4];
+
+
+
+react intention_step =
+     Intent.id
+  || Beliefs.(id | Cycle.AgentReasoning)
+  || Environment.(id | Updated | Perceived)
+  -[1]->
+     Intent.Reduce.id
+  || Beliefs.(id | Cycle.EnvUpdate)
+  || Environment.(id | Unupdated | Unperceived);
+
+## adopt a newly requested event is also considered as one step of the agent level evolution
+fun react adopt_new_external_events(n) = 
+       Beliefs.(id | EId(n) | Cycle.AgentReasoning)
+    || Desires.id
+    || Environment.(id | Updated | Perceived)
+    -[1]->
+       Beliefs.(id | Cycle.EnvUpdate)
+    || Desires.(id | /l Event{l}.Identifier.EId(n))
+    || Environment.(id | Unupdated | Unperceived);
+
+
+fun react link_new_events_plans(n) =
+           Desires.(/l Event{l}.Identifier.EId(n) | id)
+        || PlanSet{e}.(Identifier.EId(n) | id)
+        -[1]->
+           Desires.(Event{e}.Identifier.EId(n) | id)
+        || PlanSet{e}.(Identifier.EId(n) | id);
+
+
+react intention_done_F =
+     Intent.Reduce.ReduceF -[1]-> 1;
+
+react intention_done_succ =
+     Intent.Reduce.Nil -[1]-> 1;
+
+
+
+
+
+
+
+
+# Perceive operation
+# i will have to put it in the instan rules 
+# and add the control token so that it is only applied once per cycle
+# it has the lowest priority to ensure the reduction is fully perform 
+# before the perceiving process kicks in
+# also because we have plan selection and concurent L or R to be shown 
+# in the transition system
+# so the agent will only perceive when one agent step is finished
+
+
+react perceive_environment =
+       Environment.(Unperceived | Updated | id) 
+    || Beliefs.(Cycle.id | id)
+    -[1]->
+       Environment.(Perceived | Updated | id) 
+    || Beliefs.(Cycle.id | id)
+    @[0,1,0] if !Reduce in ctx;   
+
+fun react remove_perceived_event_in_environment(n) =
+          Environment.(Perceived | Updated | EId(n) | id) 
+        -[1]->
+          Environment.(Perceived | Updated | id);
+
+
+#### WATCT OUT ####
+### make sure each cycle number has an update when testing
+### otherwise it will stop there as the environment needs to be flipped with token of Updated for next agent step
+
+
+
+
+react harsh_weather_update =
+         Beliefs.(Cycle.EnvUpdate | id)
+      || Environment.(Unupdated | id)   
+      -[1]->
+         Beliefs.(Cycle.AgentReasoning | id)
+      || Environment.(Updated | id | Add.B("harsh_weather") | Del.B("good_weather"))
+      if !B("harsh_weather") in param; 
+
+
+
+react detection_update =
+         Beliefs.(Cycle.EnvUpdate | id)
+      || Environment.(Unupdated | id)   
+      -[1]->
+         Beliefs.(Cycle.AgentReasoning | id)
+      || Environment.(Updated | id | Add.B("detected"))
+      if !B("detected") in param, !B("waited") in param; 
+
+
+react detection_harsh_weather_update =
+         Beliefs.(Cycle.EnvUpdate | id)
+      || Environment.(Unupdated | id)   
+      -[1]->
+         Beliefs.(Cycle.AgentReasoning | id)
+      || Environment.(Updated | id | Add.(B("detected") | B("harsh_weather")) | Del.B("good_weather"))
+      if !B("detected") in param, !B("waited") in param, !B("harsh_weather") in param;
+
+
+
+# the rest of empty update 
+react empty_update =
+         Beliefs.(Cycle.EnvUpdate | id)
+      || Environment.(Unupdated | id)   
+      -[1]->
+         Beliefs.(Cycle.AgentReasoning | id)
+      || Environment.(Updated | id)
+      if !B("waited") in param; 
+
+# i need to delete the B("waited") in case of repetitive negative environment handling
+# that abuses the B("waited") generated in the previous round
+react good_weather_update =
+         Beliefs.(Cycle.EnvUpdate | id)
+      || Environment.(Unupdated | B("waited") | id)   
+      -[1]->
+         Beliefs.(Cycle.AgentReasoning | id)
+      || Environment.(Updated | id | Add.B("good_weather") | Del.B("harsh_weather"))
+      if B("harsh_weather") in param; 
+
+
+
+
+
+# now all beliefs need to have the Cycle.AgentReasoning as an initial belief atom  
+# now we have the initial declaration of the environment first
+# then the environment is perceived by the agent in the Beliefs 
+# the initial value of the environment also containts Unperceived
+
+
+
+big return = Act.(Pre.1 | Del.1 | Add.B("at_base"));
+big patrol = Act.(Pre.1 | Del.B("parked") | Add.B("flying"));
+big wait = Act.(Pre.1 | Del.1 | Add.B("waited"));
+big activate_parking = Act.(Pre.1 | Del.B("flying") | Add.B("parked"));
+
+
+big design_figure_5 = 
+        Environment.(Unperceived | Updated | B("parked") | B("good_weather") | EId(1))
+     || Beliefs.(Cycle.AgentReasoning)
+     || Desires.1
+     || Intentions.1
+     || Plans.(
+            PlanSet{e1}.(
+            Plan.(Pre.1 | PB.Seq.(Goal.(SC.B("detected") | Event{e2}.1 | FC.F) | Cons.return))
+            | Identifier.EId(1)
+            )
+            | PlanSet{e2}.(
+              Plan.(Pre.1 | PB.Seq.(Goal.(SC.B("harsh_weather") | Event{e3}.1 | FC.F) | Cons.Event{e4}.1))
+            )
+            | PlanSet{e3}.(
+              Plan.(Pre.1 | PB.patrol)
+            )
+            | PlanSet{e4}.(
+                Plan.(Pre.(B("harsh_weather") | B("flying")) | PB.Seq.(activate_parking | Cons.wait))
+              | Plan.(Pre.(B("harsh_weather") | B("parked")) | PB.wait)
+            )
+          );
+
+
+
+## some notes on PlanSet{e2} and PlanSet{e3}
+# since the action patrol has no direct effects on belief atom "detected"
+# in PlanSet{e2}, the drone will keep patrolling (more than one execution of such action) until when env updates give "detected"
+# of course, if there is pause_signal, then Event{e5} is pursued
+# however, in PlanSet{e3}, despite the similar design, the action report_return has the effect of "at_base"
+# the action report_return will only be executed once. 
+# then if the weather is good, then the top declarative goal is achieved in PlanSet{e1}
+# if not, then Event{e5} will  be pursued to wait for the good weather.
+# the tricky bit of these two designs that Event{e5} may need to be pursued as many times as required (if the weather keeps getting harsh)
+
+big design_figure_6 = 
+        Environment.(Unperceived | Updated | B("parked") | B("good_weather") | EId(1))
+     || Beliefs.(Cycle.AgentReasoning)
+     || Desires.1
+     || Intentions.1
+     || Plans.(
+            PlanSet{e1}.(
+            Plan.(Pre.1 | PB.Seq.(Goal.(SC.(B("good_weather") | B("detected")) | Event{e2}.1 | FC.F) | Cons.Goal.(SC.(B("good_weather") | B("at_base")) | Event{e3}.1 | FC.F)))
+            | Identifier.EId(1)
+            )
+            | PlanSet{e2}.(
+              Plan.(Pre.1 | PB.Seq.(Goal.(SC.B("harsh_weather") | Event{e4}.1 | FC.F) | Cons.Event{e5}.1))
+            )
+            | PlanSet{e3}.(
+              Plan.(Pre.1 | PB.Seq.(Goal.(SC.B("harsh_weather") | Event{e6}.1 | FC.F) | Cons.Event{e5}.1))
+            )
+            | PlanSet{e4}.(
+              Plan.(Pre.1 | PB.patrol)
+            )
+            | PlanSet{e6}.(
+              Plan.(Pre.1 | PB.return)
+            )
+            | PlanSet{e5}.(
+                Plan.(Pre.(B("harsh_weather") | B("flying")) | PB.Seq.(activate_parking | Cons.wait))
+              | Plan.(Pre.(B("harsh_weather") | B("parked")) | PB.wait)
+            )
+          );
+
+
+
+big new_event_request = Beliefs.(EId(1) | id);
+big new_event_assimilated = Desires.(Event{e}.Identifier.EId(1) | id);
+big belief_harsh_weather = Beliefs.(B("harsh_weather") | id);
+big belief_at_base = Beliefs.(B("at_base") | id);
+big intention_completion = Intent.Nil;
+big desire_committed = Desires.1;
+
+begin pbrs
+    string n = {"good_weather", "detected", "pause_signal", "harsh_weather", "flying", "at_base", "parked", "waited"};
+
+    # cap for the external event number 
+    int ecap = 20;
+    int en = [0:1:ecap]; 
+
+    # cap for the waiting step 
+    int wcap = 9;
+    int wn = [0:1:wcap];   
+
+    init design_figure_6;
+
+
+    rules = [
+
+            # link the newly added external events with their relevant plans
+            (link_new_events_plans(en)),
+
+            # change to Trys control
+            (try_succ_unique),
+
+            # add CheckToken for all initial user-specified plans    
+            (init_plansets),
+
+            # Plan selection token housekeeping
+            (reset_planset),
+
+            # Atomic set ops
+            ( check_T(n),
+              check_end, 
+              check_F(n), 
+              add_notin(n), 
+              add_in(n),
+              add_end,
+              del_in(n), 
+              del_notin(n),
+              delete_end
+            ),
+            
+            # add command instructions when done with the belief atoms revision
+            (
+            add_commands_update
+            ),
+
+            # actually reduce the programs
+            ( reduce_event,
+              act_check,
+              select_plan_check,
+              goal_check
+            ),
+
+            # the follow-up of the above actual reduction of the programs 
+            ( act_T,
+              act_F,
+              select_plan_F,
+              goal_suc,
+              goal_fail,
+              goal_init
+            ),
+
+            # special cases of rules specifying how the AND/OR tree is explored excluding those having ReduceF
+            (conc_succ, goal_persist_nil),
+
+            # conc_succ has to have a higher priority than both conc_nil_L and conc_nil_R           
+            (conc_nil_L, conc_nil_R), 
+
+            (seq_succ), 
+            (try_succ),
+
+            # special cases of rules to specify how the AND/OR tree should be explored for handling ReduceF
+            (goal_persist, conc_fail_L, conc_fail_R),
+            (seq_fail),
+            (try_failure),
+
+            # non-special cases of rules to specify how the AND/OR tree should be explored
+            # rule conc_L and conc_R need to be the normal rules if concurrency is ever used
+            (goal_reduce),       
+            (reduce_seq),  
+            (try_seq),
+            
+            # special cases of agent level operation
+            # they do not need to be normal rules
+            (intention_done_succ, intention_done_F),
+
+
+            # the environmental update has higher priority as it proceeds before perceiving
+            # the environment update rules for the retrivial model
+
+ 
+
+            # the step for the perceiving process
+            (perceive_environment, remove_perceived_event_in_environment(en)),
+
+   
+            # non-determinism of rules which have to be a normal rule to allow branching
+            {select_plan_T, conc_L, conc_R},
+
+
+            # non-special cases of agent level operation
+            {
+            a_event, 
+            intention_step, 
+            adopt_new_external_events(en), 
+            empty_update,
+            harsh_weather_update,
+            detection_harsh_weather_update,
+            good_weather_update,
+            detection_update
+            }
+
+            ];
+            preds = {belief_harsh_weather, belief_at_base, intention_completion, new_event_request, new_event_assimilated, desire_committed};
+end

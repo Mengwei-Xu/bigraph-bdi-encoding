@@ -1,0 +1,873 @@
+# the MDP model of CAN Semantic for rover example 
+
+## CONTROLS
+
+ctrl Check = 0;
+ctrl Del = 0;
+ctrl Add = 0;
+atomic ctrl T = 0; # true
+atomic ctrl F = 0; # false
+
+ctrl Intentions = 0;
+ctrl Intent = 0;
+
+ctrl Desires = 0;
+
+ctrl Beliefs = 0;
+
+atomic fun ctrl B(n) = 0;
+
+ctrl Reduce = 0;
+atomic ctrl ReduceF = 0;
+atomic ctrl GReduceF = 0;
+
+ctrl Act = 0;
+ctrl Pre = 0;
+
+ctrl Event = 1;
+
+# controls for the identifier of events and plans
+ctrl Identifier = 0;
+atomic fun ctrl E(n) = 0;
+atomic fun ctrl P(n) = 0;
+atomic fun ctrl A(n) = 0;
+
+atomic fun ctrl Success(n) = 0;
+atomic fun ctrl Failure(n) = 0;
+
+
+ctrl Plans = 0;
+ctrl PlanSet = 1;
+ctrl Plan = 0;
+ctrl PB = 0;
+
+# Tree
+ctrl Try = 0; #OR-Like
+ctrl Seq = 0; #AND-Like
+ctrl Cons = 0;
+
+ctrl Conc = 0;
+ctrl L = 0;
+ctrl R = 0;
+
+
+atomic ctrl CheckToken = 0;
+
+ctrl Goal = 0;
+ctrl SC = 0;
+ctrl FC = 0;
+
+# I need to add Nil to get away from some sutble problems for instantenous rules
+# Nil stands for 1 
+atomic ctrl Nil = 0;
+
+# the sames reason to introduce Trys to get away from some sutble problems for instantenous rules
+# detailed reason can be requested in person
+# Try for special case:
+ctrl Trys = 0;
+
+
+# stochastic actions
+ctrl Effect = 0;
+atomic fun ctrl EffWeight(n) = 0;
+
+
+# new controls for deciding which agent-level operation should be applied
+# atm it is the fixed distribution
+atomic ctrl ChooseAevent = 0;
+atomic ctrl ChooseAstep = 0;
+atomic ctrl ChooseAupdate = 0;
+
+# the control that unifies ReduceF and Nil
+atomic ctrl Unprogressable = 0;
+
+
+## END Controls
+
+# Check contains the formula to be checked against the belief base
+# Check cannot be nested under the Beliefs 
+# as it will cause problems in the rule check_F(n) when declared as instan rules.
+# when there are some same formulas in two different check due to our weak condition check (cannot say which id the param is against)
+# Instead I nest Check under the entity (e.g. plans) for which the check is needed
+# and giving the final check result as child of Check
+# thus no link and no CheckRes control needed
+
+
+fun react check_T(n) =
+    Beliefs.(B(n) | id) || Check.(B(n) | id)
+    -[1]->
+    Beliefs.(B(n) | id) || Check.id;
+
+react check_end =
+    Beliefs.id || Check.1
+    -[1]->
+    Beliefs.id || Check.T;
+
+fun react check_F(n) =
+    Beliefs.id || Check.(B(n) | id)
+    -[1]->
+    Beliefs.id || Check.F
+    @[0] if !B(n) in param;
+
+
+fun react add_notin(n) =
+    Beliefs.(Add.(B(n) | id) | id)
+    -[1]->
+    Beliefs.(Add.id | B(n) | id) @[0,1] if !B(n) in param;
+
+fun react add_in(n) =
+    Beliefs.(Add.(B(n) | id) | B(n) | id)
+    -[1]->
+    Beliefs.(Add.id | B(n) | id) @[0,1];
+
+react add_end =
+    Beliefs.(Add.1 | id)
+    -[1]->
+    Beliefs.id;
+
+fun react del_in(n) =
+    Beliefs.(Del.(B(n) | id) | B(n) | id)
+    -[1]->
+    Beliefs.(Del.id | id);
+
+fun react del_notin(n) =
+    Beliefs.(Del.(B(n) | id) | id)
+    -[1]->
+    Beliefs.(Del.id | id) if !B(n) in param;
+
+react delete_end =
+    Beliefs.(Del.1 | id)
+    -[1]->
+    Beliefs.id @[0];
+
+
+
+## END Beliefs
+
+## Core actions
+react act_check =
+  Reduce.Act.(Pre.id | id)
+  -[1]->
+  Reduce.Act.(Pre.id | id | Check.id)
+  @[0,1,0] if !Check in param;
+
+# action execution is extended to model the stochastic effects of action
+# in this specific example we do not have stochastic effects so we do not need another parameter for effect's weight
+react act_T_1 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(1) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_2 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(2) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_3 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(3) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_4 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(4) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_5 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(5) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_6 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(6) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_7 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(7) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_8 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(8) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_9 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(9) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_10 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(10) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_11 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(11) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_12 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(12) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_13 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(13) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+react act_T_14 =
+     Beliefs.id
+  || Reduce.Act.(Identifier.A(14) | id | Effect.(Add.id | Del.id | EffWeight(1)) | Check.T)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil @[0,2,3];
+
+
+react act_F =
+  Reduce.Act.(id | Check.F)
+  -[1]->
+  ReduceF @[];
+
+react reduce_event =
+    Reduce.Event{ps}.1
+ || Plans.(PlanSet{ps}.id | id)
+ -[1]->
+    PlanSet{ps}.id
+ || Plans.(PlanSet{ps}.id | id)
+ @[0,0,1];
+
+
+# Plan Selection
+react select_plan_check =
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | CheckToken | id) | id)
+ -[1]->
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | Check.id | id) | id)
+  @[0,0,1,2];
+
+
+
+
+react select_plan_T_1 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(1) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_2 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(2) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_3 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(3) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_4 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(4) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_5 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(5) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_6 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(6) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_7 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(7) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_8 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(8) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_9 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(9) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_10 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(10) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_11 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(11) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_12 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(12) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_13 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(13) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+react select_plan_T_14 =
+    Reduce.PlanSet{ps}.(Plan.(Identifier.P(14) | Pre.id | Check.T | PB.id) | id)
+  -[1]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,2];
+
+
+react select_plan_F =
+    Reduce.PlanSet{ps}.id
+  -[1]->
+    ReduceF | {ps} @[]
+    if !CheckToken in param, !Check.T in param;
+
+
+react reset_plansets =
+  Try.(id | Cons.PlanSet{ps}.(Plan.(Check.id | id) | id))
+  -[1]->
+  Try.(id | Cons.PlanSet{ps}.(Plan.(CheckToken | id) | id))
+  @[0,2,3];
+
+# this rule needs to be revised as Plan has one more nested entities called identifier
+react init_plansets =
+  Plans.(PlanSet{ps}.(Plan.(Pre.id | PB.id | Identifier.id) | id) | id)
+  -[1]->
+  Plans.(PlanSet{ps}.(Plan.(CheckToken | Pre.id | PB.id | Identifier.id) | id) | id);
+
+
+
+
+## Sequencing
+react reduce_seq =
+  Reduce.Seq.(id | Cons.id)
+  -[1]->
+  Seq.(Reduce.id | Cons.id);
+
+react seq_succ =
+  Reduce.Seq.(Nil | Cons.id)
+  -[1]->
+  Reduce.id;
+
+# this rule is rather artifical and purely intermedia for better structural update
+# not really reflected in Semantics?
+react seq_fail =
+  Seq.(ReduceF | Cons.id)
+  -[1]->
+  ReduceF @[];
+
+## Failure Recovery
+react try_seq =
+  Reduce.Try.(id | Cons.id)
+  -[1]->
+  Try.(Reduce.id | Cons.id);
+
+# this is where i change Try into Trys
+# as try_seq can be overmatched to keep adding Reduce on the top of Nil
+react try_succ_unique =
+  Try.(Nil | Cons.id)
+  -[1]->
+  Trys.(Nil | Cons.id);
+
+react try_succ =
+  Reduce.Trys.(Nil | Cons.id)
+  -[1]->
+  Nil @[];
+
+react try_failure =
+  Try.(ReduceF | Cons.id)
+  -[1]->
+  Reduce.id;
+
+
+
+# Concurrency
+# all instan rules
+react conc_nil_R=
+  Reduce.Conc.(L.Nil | R.id)
+  -[1]->
+  Conc.(L.Nil | R.Reduce.id);
+
+react conc_nil_L =
+  Reduce.Conc.(L.id | R.Nil)
+  -[1]->
+  Conc.(L.Reduce.id | R.Nil);
+
+react conc_L =
+  Reduce.Conc.(L.id | id)
+  -[1]->
+  Conc.(L.Reduce.id | id);
+
+react conc_R =
+  Reduce.Conc.(R.id | id)
+  -[1]->
+  Conc.(R.Reduce.id | id);
+
+react conc_succ =
+  Reduce.Conc.(L.Nil | R.Nil)
+  -[1]->
+  Nil;
+
+react conc_fail_L =
+  Conc.(L.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+react conc_fail_R =
+  Conc.(R.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+
+# Declarative goals #
+# all instan rules
+react goal_check =
+  Reduce.Goal.(SC.id | id | FC.id)
+   -[1]->
+  Reduce.Goal.(SC.(id | Check.id) | id | FC.(id | Check.id))
+  @[0,0,1,2,2]
+  if !Check in param;
+
+react goal_suc =
+  Reduce.Goal.(SC.(id | Check.T) | id)
+  -[1]->
+  Nil @[];
+
+react goal_fail =
+  Reduce.Goal.(FC.(id | Check.T) | id)
+  -[1]->
+  Act.(Pre.F | Add.1 | Del.1) @[];
+
+react goal_init =
+  Reduce.Goal.(SC.(id | Check.F) | id | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2]
+  if !Try in param, !Trys in param;
+
+react goal_reduce =
+  Reduce.Goal.(SC.(id | Check.F) | Try.(id | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(Reduce.id | Cons.id) | FC.id);
+
+react goal_persist_nil =
+  Reduce.Goal.(SC.(id | Check.F) | Trys.(Nil | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2];
+
+# the following rule is used as instan rules
+# because I have the problem that when there is no plan applicable for the top event in the declarative goal
+# i.e. goal(SC.id | Try.(Reduce.F | Cons.id) | FC.id)
+# the current order of the rules would apply try_failure (which is not what we want)
+# as we want goal_persist
+# however in order to apply goal_persist, Reduce needs to be introduced (i.e. application of rule Intention_step)
+# so the best way to fix this is to create a new type for ReduceF in declarative goal for the top-level failure
+# the none-top-level failure can still be handled by the try_failure though in the declarative goal.
+react goal_root_failure_transform = 
+Goal.(id | Try.(ReduceF | Cons.id))
+-[1]->
+Goal.(id | Try.(GReduceF | Cons.id));
+
+
+
+react goal_persist =
+Reduce.Goal.(SC.(id | Check.F) | Try.(GReduceF | Cons.id) | FC.(id | Check.F))
+-[1]->
+Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+@[0,1,1,2];
+
+
+# Agent-Level Steps
+
+# no meta-layer is added for this version
+
+# an event is regarded as being progressed a step
+# if any agent-level rule is applied upon it.
+
+
+react a_event_1 =
+     Desires.(Event{e}.Identifier.E(1) | id)
+  || Intentions.id
+  -[1]->
+     Desires.id
+  || Intentions.(Intent.(Event{e}.1 | Identifier.E(1)) | id);
+
+react a_event_2 =
+     Desires.(Event{e}.Identifier.E(2) | id)
+  || Intentions.id
+  -[1]->
+     Desires.id
+  || Intentions.(Intent.(Event{e}.1 | Identifier.E(2)) | id);
+
+react a_event_3 =
+     Desires.(Event{e}.Identifier.E(3) | id)
+  || Intentions.id
+  -[1]->
+     Desires.id
+  || Intentions.(Intent.(Event{e}.1 | Identifier.E(3)) | id);
+
+
+
+react a_step_1 =
+     Intent.(Identifier.E(1) | id)
+   -[1]->
+     Intent.(Identifier.E(1) | Reduce.id)
+  if !Unprogressable in param;
+
+react a_step_2 =
+     Intent.(Identifier.E(2) | id)
+   -[1]->
+     Intent.(Identifier.E(2) | Reduce.id)
+  if !Unprogressable in param;
+
+react a_step_3 =
+     Intent.(Identifier.E(3) | id)
+   -[1]->
+     Intent.(Identifier.E(3) | Reduce.id)
+  if !Unprogressable in param;
+
+
+
+react a_update_1 =
+       Intent.(Identifier.E(1) | Unprogressable)
+    -[1]->
+       1;
+
+react a_update_2 =
+       Intent.(Identifier.E(2) | Unprogressable)
+    -[1]->
+       1;
+
+react a_update_3 =
+       Intent.(Identifier.E(3) | Unprogressable)
+    -[1]->
+       1;
+
+
+
+# i need to unify the ReduceF and Nil to Unprogressable due to the lack of OR construct in param declarations
+# to do so, i have some auxiliary rules to change ReduceF and Nil to Unprogressable. 
+# meanwhile, i can register the failure or success of a given event in the belief base
+# this is really for explicit predicate for model checking
+# afterall, there is no notion of success or failure of an event from the desires
+
+fun react reducef_to_unprogressable(n) =
+       Beliefs.id 
+    || Intent.(ReduceF | Identifier.E(n))
+    -[1]->
+       Beliefs.(id | Failure(n))
+    || Intent.(Unprogressable | Identifier.E(n));
+
+
+fun react nil_to_unprogressable(n) =
+       Beliefs.id 
+    || Intent.(Nil | Identifier.E(n))
+    -[1]->
+       Beliefs.(id | Success(n))
+    || Intent.(Unprogressable | Identifier.E(n));
+
+
+
+
+# idle rule which creates the self-loop for the deadend states
+
+react self_loop = Intentions.1 -[1]-> Intentions.1;
+
+
+
+# the idea of the example is that a Mars has a mission to visit three sites to perform various experiments
+# the layout of the location is as follows:
+#                                 C(3)
+#                B(2)
+#   A(1)
+# 
+#       base
+# the dist(base, A) = 1, dist(A,B) = 3, dist(B,C)= 4, dist(base, B) = 3, and dist(C, base) = 5
+# in this case, the probability is gone to have a better control of reward properties
+# the goal of this rover is to successfully visit all sites and perform experiments with min unit of battery consumption
+
+
+
+# action descriptions (which have to come first before these bigraph patterns can be recalled/referenced).
+big move_base_to_A = Act.(Identifier.A(1) | Pre.B("at_base") | Effect.(Add.B("at_A") | Del.B("at_base") | EffWeight(1)));
+big move_base_to_B = Act.(Identifier.A(2) | Pre.B("at_base") | Effect.(Add.B("at_B") | Del.B("at_base") | EffWeight(1)));
+big move_base_to_C = Act.(Identifier.A(3) | Pre.B("at_base") | Effect.(Add.B("at_C") | Del.B("at_base") | EffWeight(1)));
+big move_A_to_base = Act.(Identifier.A(4) | Pre.B("at_A") | Effect.(Add.B("at_base") | Del.B("at_A") | EffWeight(1)));
+big move_A_to_B = Act.(Identifier.A(5) | Pre.B("at_A") | Effect.(Add.B("at_B") | Del.B("at_A") | EffWeight(1)));
+big move_B_to_base = Act.(Identifier.A(6) | Pre.B("at_B") | Effect.(Add.B("at_base") | Del.B("at_B") | EffWeight(1)));
+big move_B_to_A = Act.(Identifier.A(7) | Pre.B("at_B") | Effect.(Add.B("at_A") | Del.B("at_B") | EffWeight(1)));
+big move_B_to_C = Act.(Identifier.A(8) | Pre.B("at_B") | Effect.(Add.B("at_C") | Del.B("at_B") | EffWeight(1)));
+big move_C_to_base = Act.(Identifier.A(9) | Pre.B("at_C") | Effect.(Add.B("at_base") | Del.B("at_C") | EffWeight(1)));
+big move_C_to_B = Act.(Identifier.A(10) | Pre.B("at_C") | Effect.(Add.B("at_B") | Del.B("at_C") | EffWeight(1)));
+big perform_at_A = Act.(Identifier.A(11) | Pre.B("at_A") | Effect.(Add.1 | Del.1 | EffWeight(1)));
+big perform_at_B = Act.(Identifier.A(12) | Pre.B("at_B") | Effect.(Add.1 | Del.1 | EffWeight(1)));
+big perform_at_C = Act.(Identifier.A(13) | Pre.B("at_C") | Effect.(Add.1 | Del.1 | EffWeight(1)));
+big do_nothing = Act.(Identifier.A(14) | Pre.1 | Effect.(Add.1 | Del.1 | EffWeight(1)));
+
+
+big two_sites_mission_with_return =
+        Beliefs.B("at_base")
+     || Desires.(Event{ps1}.Identifier.E(1) | Event{ps2}.Identifier.E(2))
+     || Intentions.1
+     || Plans.(
+            PlanSet{ps1}.Plan.(Identifier.P(1) | Pre.1 | PB.Seq.(Event{ps3}.1 | Cons.Event{ps5}.1))
+          | PlanSet{ps2}.Plan.(Identifier.P(2) | Pre.1 | PB.Seq.(Event{ps4}.1 | Cons.Event{ps5}.1))
+          | PlanSet{ps3}.(
+                          Plan.(Identifier.P(3) | Pre.B("at_base") | PB.Seq.(move_base_to_A | Cons.perform_at_A))
+                        | Plan.(Identifier.P(4) | Pre.B("at_A") | PB.perform_at_A)
+                        | Plan.(Identifier.P(5) | Pre.B("at_B") | PB.Seq.(move_B_to_A | Cons.perform_at_A))
+                        ) 
+          | PlanSet{ps4}.(
+                          Plan.(Identifier.P(6) | Pre.B("at_base") | PB.Seq.(move_base_to_B | Cons.perform_at_B))
+                        | Plan.(Identifier.P(7) | Pre.B("at_A") | PB.Seq.(move_A_to_B | Cons.perform_at_B))
+                        | Plan.(Identifier.P(8) | Pre.B("at_B") | PB.perform_at_B)
+                        ) 
+          | PlanSet{ps5}.(
+                          Plan.(Identifier.P(9) | Pre.B("at_base") | PB.do_nothing)
+                        | Plan.(Identifier.P(10) | Pre.B("at_A") | PB.move_A_to_base)
+                        | Plan.(Identifier.P(11) | Pre.B("at_B") | PB.move_B_to_base)
+                        ) 
+          );
+
+
+
+
+
+
+
+big s1_s2 = Beliefs.(Success(1) | Success(2) | id) || Intentions.1;
+big s1_f2 = Beliefs.(Success(1) | Failure(2) | id) || Intentions.1;
+big f1_s2 = Beliefs.(Failure(1) | Success(2) | id) || Intentions.1;
+big f1_f2 = Beliefs.(Failure(1) | Failure(2) | id) || Intentions.1;
+
+
+
+begin abrs 
+    string n = {"at_base", "at_A", "at_B", "at_C"};
+
+    # for event identifier number 1-3
+    int m = [1:1:3];  
+
+    init two_sites_mission_with_return;
+    rules = [
+            # the overall philosophy of the order of instantaneous rule is rought as follows
+            # all the background non-BDI core semantics update rules come first like deadline update, tokenhousekeeping, atomic belief check, add, deletion operations, preference calculation
+            # then check rules for BDI program, like plan selectio check
+            # then actual reduction of BDI program, like action execution
+            # then special case of rules specifying how the AND/OR tree should be explored, excluding those having ReduceF
+            # then general case of rules specifying how the AND/OR tree should be explored, excluding those having ReduceF
+            # then special case of rules specifying how the AND/OR tree should be explored, for those having ReduceF
+            # then general case of rules specifying how the AND/OR tree should be explored, for those having ReduceF
+            # then agent-level rule which can be put as instantaneous, such as a_event
+            # then non-deterministic intention-level rules as normal rules such as act_T
+            # then intention_step rules as normal rules
+
+
+            # auxiliary rules to unify ReduceF and Nil to Unprogressable
+            (reducef_to_unprogressable(m), nil_to_unprogressable(m)),
+
+
+            # change to Trys control
+            (try_succ_unique),
+
+            # add CheckToken for all initial user-specified plans    
+            (init_plansets),
+
+            (goal_root_failure_transform),
+
+            # Plan selection token housekeeping
+            (reset_plansets),
+
+            # Atomic set ops
+            ( check_T(n),
+              check_end, 
+              check_F(n), 
+              add_notin(n), 
+              add_in(n),
+              add_end,
+              del_in(n), 
+              del_notin(n),
+              delete_end
+            ),
+            
+
+
+            # actually reduce the programs
+            ( reduce_event,
+              act_check,
+              select_plan_check,
+              goal_check
+            ),
+
+            # the follow-up of the above actual reduction of the programs 
+            ( act_F,
+              select_plan_F,
+              goal_suc,
+              goal_fail,
+              goal_init
+            ),
+
+            # special cases of rules specifying how the AND/OR tree is explored excluding those having ReduceF
+            (conc_succ, goal_persist_nil),
+
+            # conc_succ has to have a higher priority than both conc_nil_L and conc_nil_R           
+            (conc_nil_L, conc_nil_R), 
+
+            (seq_succ), 
+            (try_succ),
+
+            # special cases of rules to specify how the AND/OR tree should be explored for handling ReduceF
+            (goal_persist, conc_fail_L, conc_fail_R),
+            (seq_fail),
+            (try_failure),
+
+            # non-special cases of rules to specify how the AND/OR tree should be explored
+            # rule conc_L and conc_R need to be the normal rules if concurrency is ever used
+            (goal_reduce),       
+            (reduce_seq),  
+            (try_seq),
+            
+
+
+            # non-determinism in the intention level
+            {act_T_1,
+             act_T_2,
+             act_T_3,
+             act_T_4,
+             act_T_5,
+             act_T_6,
+             act_T_7,
+             act_T_8,
+             act_T_9,
+             act_T_10,
+             act_T_11,
+             act_T_12,
+             act_T_13,
+             act_T_14
+            },
+            {conc_L, conc_R},
+            {select_plan_T_1, 
+             select_plan_T_2,
+             select_plan_T_3,
+             select_plan_T_4,
+             select_plan_T_5,
+             select_plan_T_6,
+             select_plan_T_7, 
+             select_plan_T_8,
+             select_plan_T_9,
+             select_plan_T_10,
+             select_plan_T_11,
+             select_plan_T_12,
+             select_plan_T_13, 
+             select_plan_T_14
+             },
+   
+            # non-determinism in the agent level 
+            {a_event_1,
+             a_event_2,
+             a_event_3,
+             a_step_1,
+             a_step_2,
+             a_step_3,
+             a_update_1,
+             a_update_2,
+             a_update_3
+            },
+
+            # the self-loop has the lowest priority to ensure a self-loop for the deadend states
+            {self_loop}
+
+
+            ];
+
+    actions = [
+        instantrules =
+        {
+        reducef_to_unprogressable,
+        nil_to_unprogressable,
+        try_succ_unique,
+        init_plansets,
+        goal_root_failure_transform,
+        reset_plansets,
+        check_T,
+        check_end,
+        check_F,
+        add_notin,
+        add_in,
+        add_end,
+        del_in,
+        del_notin,
+        delete_end,
+        reduce_event,
+        act_check,
+        select_plan_check,
+        goal_check,
+        act_F,
+        select_plan_F,
+        goal_suc,
+        goal_fail,
+        goal_init,
+        conc_succ,
+        goal_persist_nil,
+        conc_nil_L,
+        conc_nil_R,
+        seq_succ,
+        try_succ,
+        goal_persist,
+        conc_fail_L,
+        conc_fail_R,
+        seq_fail,
+        try_failure,
+        goal_reduce,
+        reduce_seq,
+        try_seq
+        },
+        executing_action_1[1] = {act_T_1},
+        executing_action_2[3] = {act_T_2},
+        executing_action_3[5] = {act_T_3},
+        executing_action_4[1] = {act_T_4},
+        executing_action_5[3] = {act_T_5},
+        executing_action_6[3] = {act_T_6},
+        executing_action_7[3] = {act_T_7},
+        executing_action_8[4] = {act_T_8},
+        executing_action_9[5] = {act_T_9},
+        executing_action_10[4] = {act_T_10},
+        executing_action_11 = {act_T_11},
+        executing_action_12 = {act_T_12},
+        executing_action_13 = {act_T_13},
+        executing_action_14 = {act_T_14},
+        selecting_concurrent_left = {conc_L},
+        selecting_concurrent_right = {conc_R},
+        selecting_plan_1 = {select_plan_T_1},
+        selecting_plan_2 = {select_plan_T_2},
+        selecting_plan_3 = {select_plan_T_3},
+        selecting_plan_4 = {select_plan_T_4},
+        selecting_plan_5 = {select_plan_T_5},
+        selecting_plan_6 = {select_plan_T_6},
+        selecting_plan_7 = {select_plan_T_7},
+        selecting_plan_8 = {select_plan_T_8},
+        selecting_plan_9 = {select_plan_T_9},
+        selecting_plan_10 = {select_plan_T_10},
+        selecting_plan_11 = {select_plan_T_11},
+        selecting_plan_12 = {select_plan_T_12},
+        selecting_plan_13 = {select_plan_T_13},
+        selecting_plan_14 = {select_plan_T_14},
+        doing_a_event_1  = {a_event_1},
+        doing_a_event_2  = {a_event_2},
+        doing_a_event_3  = {a_event_3},
+        doing_a_step_1 = {a_step_1},
+        doing_a_step_2 = {a_step_2},
+        doing_a_step_3 = {a_step_3},
+        doing_a_update_1 = {a_update_1},
+        doing_a_update_2 = {a_update_2},
+        doing_a_update_3 = {a_update_3},
+        loop = {self_loop}
+        ];
+        preds = {s1_s2, s1_f2, f1_s2, f1_f2};
+end

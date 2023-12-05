@@ -1,0 +1,1180 @@
+# CAN Semantic Model from "Modelling and Verifying BDI Agents with Bigraphs. Xu et al"
+# only agent-level rules are norm rules
+# the rest of rules are instantenous rules
+# the idea is that when an Reduce is added, 
+# after the applications of all instantenous rules in the background, the next step is produced.  
+
+## CONTROLS
+
+ctrl Check = 0;
+ctrl Del = 0;
+ctrl Add = 0;
+atomic ctrl T = 0; # true
+atomic ctrl F = 0; # false
+
+ctrl Intentions = 0;
+ctrl Intent = 1;
+
+ctrl Desires = 0;
+
+ctrl Beliefs = 0;
+atomic fun ctrl B(n) = 0;
+
+ctrl Reduce = 0;
+atomic ctrl ReduceF = 0;
+
+ctrl Act = 0;
+ctrl Pre = 0;
+
+ctrl Event = 1;
+
+ctrl Plans = 0;
+ctrl PlanSet = 1;
+ctrl Plan = 0;
+ctrl PB = 0;
+
+# Tree
+ctrl Try = 0; #OR-Like
+ctrl Seq = 0; #AND-Like
+ctrl Cons = 0;
+
+ctrl Conc = 0;
+ctrl L = 0;
+ctrl R = 0;
+
+# CheckToken can be discarded if we are verbose in the related rules
+atomic ctrl CheckToken = 0;
+
+ctrl Goal = 0;
+ctrl SC = 0;
+ctrl FC = 0;
+
+
+# Nil for 1 
+atomic ctrl Nil = 0;
+
+# Try for special case:
+ctrl Trys = 0;
+
+
+
+# event, plan, and action identifier
+ctrl Identifier = 0;
+fun ctrl EId(n) = 0;
+fun ctrl PId(n) = 0;
+fun ctrl AId(n) = 0;
+
+
+# AND/OR Tree and Trace
+# in trace, there are the identifiers of events, plans, and actions, and length of the trace
+ctrl Trace = 0;
+ctrl Element = 0;
+atomic fun ctrl Length(n) = 0;
+atomic fun ctrl Position(n) = 0;
+ctrl Distance = 0;
+
+
+# all controls needed for pre-processing 
+ctrl PreProcess = 0;
+ctrl DesiresPreProcess = 0;
+ctrl IntentionPreProcess = 0;
+# token to avoid re-starting preprocessing
+atomic ctrl NoRestart = 0;
+ctrl IntentPreProcess = 0;
+ctrl ReducePre = 0;
+
+
+# controls for recording the actual execution trace
+ctrl ExecutionTrace = 0;
+# MemoryPoint is to store the execution trace prior to the commencement of a declarative goal
+# so that when the declarative goal repeats itself, i know where i can go back to
+ctrl MemoryPoint = 0;
+# the following ctrl is for extracting the ExecutionTrace in Try/Trys, Seq, and Cons nested structure
+# when SC holds in the middle of execution.
+
+atomic ctrl TraceRevisionUponFailure = 0;
+atomic ctrl TraceRevisionUponRepetition = 0;
+
+
+# controls for estimating the progress of an intention
+atomic ctrl Unpoped = 0;
+atomic ctrl DSyne = 0;
+ctrl Progress = 0;
+atomic ctrl Zero = 0;
+ctrl Copy = 0;
+ctrl EstCheck = 0;
+
+
+
+# controls for intention status
+atomic ctrl Pending = 0;
+atomic ctrl Active = 0;
+atomic ctrl Failure = 0;
+atomic ctrl Success = 0;
+
+
+
+# motivational library: the collection of the events triggered by the belief addition
+ctrl MotLib = 0;
+ctrl MotRule = 0;
+
+
+
+### Pre-analysis Rules Start here
+
+
+# add DesiresPreProcess and IntentionPreProcess under PreProcess
+react start_preprocessing = PreProcess.1 -[1]-> PreProcess.(DesiresPreProcess.1 | IntentionPreProcess.1);
+
+# copy the events in original Desires to DesirePreProcess.
+
+react copy_desires_to_desirepreprocess =
+      Desires.id || DesiresPreProcess.1
+      -[1]->
+      Desires.id || DesiresPreProcess.(NoRestart | id)
+      @[0,0];
+
+
+# adding event from DesiresPreProcess to IntentionPreProcess
+react a_event_analysis =
+     DesiresPreProcess.(id | Event{e}.(Pending | id))
+  || IntentionPreProcess.id
+  -[1]->
+     DesiresPreProcess.id
+  || IntentionPreProcess.(id | IntentPreProcess.(Event{e}.id | Trace.Distance.Length(0)))
+  @[0,2,1];
+
+
+
+
+
+# event pre-analysis
+# for each state, we now maintain all possible traces
+fun react reduce_event_analysis(n) =
+    ReducePre.(Event{ps}.Identifier.id | Trace.(Distance.Length(n) | id))
+ || Plans.(PlanSet{ps}.id | id)
+ -[1]->
+    PlanSet{ps}.id | Trace.(Distance.Length(n+1) | Element.(id | Position(n+1)) | id) 
+ || Plans.(PlanSet{ps}.id | id)
+ @[2,0,1,2,3];
+
+
+# Declarative goals 
+# i lose one step (of setting itself for backup choice) compared to the normal declarative goals
+# therefore, despite no ReducePre being swallowed, the Length(n+1) still occurs
+fun react goal_to_event_analysis(n) =
+   ReducePre.(Goal.(SC.id | id | FC.id) | Trace.(Distance.Length(n) | id))
+   -[1]->
+   ReducePre.(id | Trace.(Distance.Length(n+1) | id))
+   @[1,3];
+
+
+# plan selection pre-analysis
+# no need to keep all backup plans as i do not do failure any way.
+# therefore i need to change the rule for backup plans part later on.
+# i need to keep each branching in its own box for matching purpose
+fun react select_plan_analysis(n) =
+  ReducePre.(PlanSet{ps}.(Plan.(Identifier.id | id | PB.id) | id) | Trace.(Distance.Length(n) | id))
+  -[1]->
+  Try.(id | Trace.(Distance.Length(n+1) | Element.(id | Position(n+1)) | id)) | ReducePre.(PlanSet{ps}.id | Trace.(Distance.Length(n) | id))
+  @[2,0,4,3,4];
+
+
+# after the rule select_plan_analysis, there is a program ReducePre.(PlanSet{ps}.1 | Trace.(Distance.Length(n) | id)) left
+# the following rule is to get rid of it after the rule select_plan_analysis
+# of course, we always need to ensure that there are always plans for a given event
+# otherwise, the following rule can be problematic if there is no plan for a given event.
+react select_plan_analysis_end =
+      ReducePre.(PlanSet{ps}.1 | Trace.id)
+      -[1]->
+      1 | {ps}
+      @[];
+
+
+
+# progressing program under the back-up symbol 
+# in case there is only one plan available for a given event
+react reduce_try_single_analysis =
+  ReducePre.Try.id
+  -[1]->
+  Try.ReducePre.id;
+
+
+# the try_seq_multiple_analysis must have the higher priority than try_seq_single_analysis
+react reduce_try_multiple_analysis =
+  ReducePre.(Try.id | id)
+  -[1]->
+  Try.ReducePre.id | ReducePre.id;
+
+# in the end, we will have a program ReducePre.1
+# therefore, i need to get rid of it.
+# same as select_plan_analysis_end, we have to ensure there is no empty intention in the middle
+# which won't happen in our case
+react reduce_try_multiple_analysis_end = 
+      ReducePre.1 -[1]-> 1;
+
+react try_succ_unique_analysis =
+  Try.(Nil | Trace.id)
+  -[1]->
+  Trys.(Nil | Trace.id);
+
+# in case there is only one plan available and completed for a given event
+fun react reduce_try_succ_single_analysis(n) =
+     ReducePre.Trys.(Nil | Trace.(Distance.Length(n) | id))
+  -[1]->
+     Nil | Trace.(Distance.Length(n+1) | id);
+
+# the try_succ_multiple_analysis must have the higher priority than try_succ_single_analysis
+fun react reduce_try_succ_multiple_analysis(n) =
+     ReducePre.(Trys.(Nil | Trace.(Distance.Length(n) | id)) | id)
+  -[1]->
+     Nil | Trace.(Distance.Length(n+1) | id) | ReducePre.id;
+
+# sequencing
+# if the 3rd is the trace in the beginning, then i move it in
+# if the trace is already in, then 3rd is 1
+# then ReducePre.(id[0] | id[2]) is ReducePre.id[0] 
+react reduce_seq_analysis =
+  ReducePre.(Seq.(id | Cons.id) | id) 
+  -[1]->
+  Seq.(ReducePre.(id | id) | Cons.id)
+  @[0,2,1];
+
+react seq_succ_analysis =
+  ReducePre.Seq.(Nil | Trace.id | Cons.id)
+  -[1]->
+  ReducePre.(Trace.id | id);
+
+# action pre-analysis: no need for actual addition/deletion of belief atoms
+fun react act_analysis(n) =
+     ReducePre.(Act.(Identifier.id | id) | Trace.(Distance.Length(n) | id))
+  -[1]->
+     Nil | Trace.(Distance.Length(n+1) | Element.(id | Position(n+1)) | id)
+  @[0,2];
+
+
+react intention_step_analysis =
+  IntentPreProcess.id
+  -[1]->
+  IntentPreProcess.ReducePre.id
+  if !ReducePre in param;
+
+#  when an intention is completed recorded in one trace, i remove the completed traces to the belief base
+fun react intention_done_succ_analysis(n) =
+       IntentPreProcess.ReducePre.(Nil | Trace.(Distance.Length(n) | id) | id)
+    || Beliefs.id 
+    -[1]-> 
+       IntentPreProcess.ReducePre.id
+    || Beliefs.(id | Trace.(Distance.Length(n+1) | id))
+    @[1,2,0];
+
+# this rule must have the higher priority than reduce_try_multiple_analysis_end.
+react intention_done_succ_analysis_end = 
+     IntentPreProcess.1 -[1]-> 1;
+
+
+
+
+
+
+
+# concurrency 
+# concurrency may need some simplification when doing the steps calculation
+# for example transform it to sequence. 
+# otherwise it can have some many different trace given the concurrent nature. 
+# similarly, when given two concurrent top events, for pre-processing, 
+# we can do true concurrency for pre-processing. 
+# atm, i did not do concurrency yet and there are not in the rules yet
+react conc_nil_R_analysis=
+  ReducePre.Conc.(L.Nil | R.id) 
+  -[1]->
+  Conc.(L.Nil | R.ReducePre.id);
+
+react conc_nil_L_analysis =
+  ReducePre.Conc.(L.id | R.Nil)
+  -[1]->
+  Conc.(L.ReducePre.id | R.Nil);
+
+react conc_L_analysis =
+  ReducePre.Conc.(L.id | id)
+  -[1]->
+  Conc.(L.ReducePre.id | id);
+
+react conc_R_analysis =
+  ReducePre.Conc.(R.id | id)
+  -[1]->
+  Conc.(R.ReducePre.id | id);
+
+fun react conc_succ_analysis(n) =
+     ReducePre.Conc.(L.Nil | R.Nil)
+  || AOTree.Trace.(Distance.Length(n) | id)
+  -[1]->
+     Nil
+  || AOTree.Trace.(Distance.Length(n+1) | id);
+
+
+
+#################################################################
+# rules for the actual execution
+# Check contains the formula to be checked against the belief base
+# Check cannot be nested under the Beliefs 
+# as it will cause problems in the rule check_F(n) when declared as instan rules.
+# when there are some same formulas in two different check due to our weak condition check
+# Instead I nest Check under the entity (e.g. plans) for which the check is needed
+# and giving the final check result as child of Check
+# thus no link and no CheckRes control needed
+
+fun react check_T(n) =
+    Beliefs.(B(n) | id) || Check.(B(n) | id)
+    -[1]->
+    Beliefs.(B(n) | id) || Check.id;
+
+react check_end =
+    Beliefs.id || Check.1
+    -[1]->
+    Beliefs.id || Check.T;
+
+fun react check_F(n) =
+    Beliefs.id || Check.(B(n) | id)
+    -[1]->
+    Beliefs.id || Check.F
+    @[0] if !B(n) in param;
+
+
+fun react add_notin(n) =
+    Beliefs.(Add.(B(n) | id) | id)
+    -[1]->
+    Beliefs.(Add.id | B(n) | id) @[0,1] if !B(n) in param;
+
+fun react add_in(n) =
+    Beliefs.(Add.(B(n) | id) | B(n) | id)
+    -[1]->
+    Beliefs.(Add.id | B(n) | id) @[0,1];
+
+react add_end =
+    Beliefs.(Add.1 | id)
+    -[1]->
+    Beliefs.id;
+
+fun react del_in(n) =
+    Beliefs.(Del.(B(n) | id) | B(n) | id)
+    -[1]->
+    Beliefs.(Del.id | id);
+
+fun react del_notin(n) =
+    Beliefs.(Del.(B(n) | id) | id)
+    -[1]->
+    Beliefs.(Del.id | id) if !B(n) in param;
+
+react delete_end =
+    Beliefs.(Del.1 | id)
+    -[1]->
+    Beliefs.id @[0];
+
+## END Beliefs
+
+## all the following rules need to be modified by considering there is an identifier attached.
+## the execution trace is maintained in the same way by keeping it around the current executed program
+
+
+## add the event from the desire to intention
+# a_event cannot be applied before the desires are copied to PreProcess for pre-process
+# the intention now has the identifer of the original event
+react a_event =
+     Desires.(id | Event{e}.(Pending | id))
+  || Intentions.id
+  -[1]->
+     Desires.(id | Event{e}.(Active | id))
+  || Intentions.(id | Intent{e}.(id | Event{e}.id | ExecutionTrace.1))
+  @[0,1,2,1,1] if !PreProcess.1 in ctx;
+
+
+## reduce the event
+## the execution trace is collected the reversed nested fashion
+## i.e. the recent executed program ID contains the previous one
+## for example, we have e1, p1, a1, then we collect it in a1.p1.e1
+fun react reduce_event(n) =
+    Reduce.(Event{ps}.Identifier.EId(n).1 | ExecutionTrace.id)
+ || Plans.(PlanSet{ps}.id | id)
+ -[1]->
+    PlanSet{ps}.id | ExecutionTrace.EId(n).id
+ || Plans.(PlanSet{ps}.id | id)
+ @[1,0,1,2];
+
+
+# Plan Selection
+# CheckToken can be discarded if we enumerate all components of Plan
+react select_plan_check =
+    Reduce.(PlanSet{ps}.(Plan.(Pre.id | CheckToken | id) | id) | id)
+    -[1]->
+    Reduce.(PlanSet{ps}.(Plan.(Pre.id | Check.id | id) | id) | id)
+    @[0,0,1,2,3] if !TraceRevisionUponFailure in param;
+
+
+fun react select_plan_T(n) =
+    Reduce.(PlanSet{ps}.(Plan.(Identifier.PId(n).1 | Pre.id | Check.T | PB.id) | id) | ExecutionTrace.id)
+    -[1]->
+    Try.(id | ExecutionTrace.PId(n).id | Cons.PlanSet{ps}.id)
+    @[1,3,2];
+
+# Reduce is swallowed here
+# but ReduceF will be picked up for the failure recovery rule
+# or picked up by the intention failure rule straighafter in the background
+# select_plan_F means there is no applicable plan anymore to address an event.
+react select_plan_F =
+    Reduce.(PlanSet{ps}.id | id)
+  -[1]->
+    ReduceF | {ps} | id
+    @[1] if !CheckToken in param, !Check.T in param;
+
+react reset_planset =
+  Try.(id | Cons.PlanSet{ps}.(Plan.(Check.id | id) | id))
+  -[1]->
+  Try.(id | Cons.PlanSet{ps}.(Plan.(CheckToken | id) | id))
+  @[0,2,3];
+
+react init_plansets =
+  Plans.(PlanSet{ps}.(Plan.(Identifier.id | Pre.id | PB.id) | id) | id)
+  -->
+  Plans.(PlanSet{ps}.(Plan.(CheckToken | Identifier.id | Pre.id | PB.id) | id) | id);
+
+
+## Failure Recovery
+## the 1st id can be either program + execution trace
+## or program under which it has a program + execution trace.
+react reduce_try =
+  Reduce.Try.(id | Cons.id)
+  -[1]->
+  Try.(Reduce.id | Cons.id);
+
+react try_succ_unique =
+  Try.(Nil | Cons.id | ExecutionTrace.id)
+  -[1]->
+  Trys.(Nil | Cons.id | ExecutionTrace.id);
+
+react try_succ =
+  Reduce.Trys.(Nil | ExecutionTrace.id | Cons.id)
+  -[1]->
+  Nil | ExecutionTrace.id
+  @[0];
+
+# this is the rule in which I can introduce trace revision step when failure occurs 
+# before the failure recovery carries on
+
+
+# for example, the rules can be like the following:
+# However, it might mean the rest of rules needs to add !TraceRevisionUponFailure as condition in the LHS.
+# since the id under Cons is the set of backup plans, I only need to add !TraceRevisionUponFailure 
+# in the LHS rule of plan selection. To be more specific, I only need to add !TraceRevisionUponFailure
+# in the LHS rule of plan selection checking.
+
+react try_failure =
+  Try.(ReduceF | Cons.id | ExecutionTrace.id)
+  -[1]->
+  Reduce.(id | TraceRevisionUponFailure | ExecutionTrace.id);
+
+# then we can do the trace revision by matching TraceRevisionUponFailure
+# the trace revision stop when it means the first EId(n).
+# then the rest of rules can formally normally. so I need to get the right priority for the above trace revision rules
+
+fun react pop_plan(n) =
+          Reduce.(id | TraceRevisionUponFailure | ExecutionTrace.PId(n).id)
+          -[1]->
+          Reduce.(id | TraceRevisionUponFailure | ExecutionTrace.id);
+
+fun react pop_action(n) =
+          Reduce.(id | TraceRevisionUponFailure | ExecutionTrace.AId(n).id)
+          -[1]->
+          Reduce.(id | TraceRevisionUponFailure | ExecutionTrace.id);
+
+fun react reach_nearest_event(n) =
+          Reduce.(id | TraceRevisionUponFailure | ExecutionTrace.EId(n).id)
+          -[1]->
+          Reduce.(id | ExecutionTrace.EId(n).id);
+
+
+
+## Sequencing
+react reduce_seq =
+  Reduce.(Seq.(id | Cons.id) | id) 
+  -[1]->
+  Seq.(Reduce.(id | id) | Cons.id)
+  @[0,2,1];
+
+react seq_succ =
+  Reduce.Seq.(Nil | Cons.id | ExecutionTrace.id)
+  -[1]->
+  Reduce.(id | ExecutionTrace.id);
+
+# this rule is rather artifical and purely intermedia for better structural update
+react seq_fail =
+  Seq.(ReduceF | Cons.id | ExecutionTrace.id)
+  -[1]->
+  ReduceF | ExecutionTrace.id 
+  @[1];
+
+
+
+
+## Core actions
+## the reason why i specify Identifier in the LHS (thus enumerating all parts under Act)
+## is to ensure no repetitive matching when using it as an instan rule 
+react act_check =
+  Reduce.(Act.(Identifier.id | Pre.id | Add.id | Del.id) | ExecutionTrace.id)
+  -[1]->
+  Reduce.(Act.(Identifier.id | Pre.id | Add.id | Del.id | Check.id) | ExecutionTrace.id)
+  @[0,1,2,3,1,4];
+
+fun react act_T(n) =
+     Beliefs.id
+  || Reduce.(Act.(Identifier.AId(n).1 | Pre.id | Add.id | Del.id | Check.T) | ExecutionTrace.id)
+  -[1]->
+     Beliefs.(id | Add.id | Del.id)
+  || (Nil | ExecutionTrace.AId(n).id)
+  @[0,2,3,4];
+
+
+# Reduce is swallowed here
+# but ReduceF will still have to be picked up by the failure recovery rules 
+react act_F =
+  Reduce.(Act.(id | Check.F) | ExecutionTrace.id)
+  -[1]->
+  ReduceF | ExecutionTrace.id 
+  @[1];
+
+
+
+
+
+
+
+# Agent-Level Steps
+# Constraint intention_step < {intention_step, intention_done_succ}
+
+# the intention has now the identifier of the original event
+react intention_step =
+  Intent{e}.(Identifier.id | id)
+  -[1]->
+  Intent{e}.(Identifier.id | Reduce.id);
+
+# we keep the execution trace in the end either in success or with failure
+react intention_done_F =
+     Desires.(id | Event{e}.(Active | id))
+  || Intent{e}.(Identifier.id | Reduce.(ReduceF | id))
+  -[1]-> 
+     Desires.(id | Event{e}.(Failure | id))
+  || 1
+  @[0,1];
+
+react intention_done_succ =
+     Desires.(id | Event{e}.(Active | id))
+  || Intent{e}.(Identifier.id | Reduce.(Nil | id))
+  -[1]-> 
+     Desires.(id | Event{e}.(Success | id))
+  || 1
+  @[0,1];
+
+
+
+
+# Declarative goals #
+# all instan rules
+
+
+# unlike the non-declarative program, a declarative goal has the following three cases
+# 1. the declarative goal succeeds when SC holds
+# 2. the declarative goal fails when FC holds
+# 3. the declarative goal carries on forever
+# for 2 and 3, it is actually easier than 1
+# all we need is to remember the previous execution trace before commencing the declarative goal
+# so that if 2 holds, it can re-use the normal above failure trace revision
+# if 3 holds, it can reset the trace to the previous execution trace and starts all over again
+# the trick is to 1, intuitively, it should be the following
+# firstly, i need to re-use Reduce.(program | trace) tyle of rules defined above
+# secondly, when SC holds, I need to extract the ExecutionTrace within the Try, Seq, Cons nested structure. 
+# however, in practice, when SC holds, it will complete the event in the declarative goal
+# and jump into the next step.
+# therefore, if all what i plan do is to match the trace, i can do the partial matching 
+# all the previous trace prior the event in the declarative goal, skipping all decomposition trace of the declarative goal event
+# and plus the next step in the same plan after the declarative goal 
+
+react store_memory_goal =
+  Reduce.(Goal.(SC.id | Event{ps}.Identifier.id | FC.id) | ExecutionTrace.id)
+   -[1]->
+  Reduce.(Goal.(MemoryPoint.id | SC.id | Event{ps}.Identifier.id | FC.id) | ExecutionTrace.id)
+  @[3,0,1,2,3];
+
+# this check rule works for both case when the last id is ExecutionTrace or 1
+react goal_check =
+  Reduce.(Goal.(SC.id | id | FC.id) | id)
+   -[1]->
+  Reduce.(Goal.(SC.(id | Check.id) | id | FC.(id | Check.id)) | id)
+  @[0,0,1,2,2,3]
+  if !Check in param;
+
+
+react goal_init =
+  Reduce.(Goal.(MemoryPoint.id | SC.(id | Check.F) | id | FC.(id | Check.F)) | ExecutionTrace.id)
+  -[1]->
+  Goal.(MemoryPoint.id | SC.id | Try.(id | ExecutionTrace.id | Cons.id) | FC.id)
+  @[0,1,2,4,2,3]
+  if !Try in param, !Trys in param;
+
+react goal_reduce =
+  Reduce.(Goal.(MemoryPoint.id | SC.(id | Check.F) | Try.(id | Cons.id) | FC.(id | Check.F)) | id)
+  -[1]->
+  Goal.(MemoryPoint.id | SC.id | Try.(Reduce.id | Cons.id) | FC.id) | id;
+
+# this rule is for when SC holds before goal_init is even applied
+react goal_suc_1 =
+  Reduce.(Goal.(SC.(id | Check.T) | id) | ExecutionTrace.id)
+  -[1]->
+  Nil | ExecutionTrace.id 
+  @[2];
+
+
+# this rule is for when SC holds after goal_init is applied
+react goal_suc_2 =
+  Reduce.Goal.(MemoryPoint.id | SC.(id | Check.T) | FC.id | id)
+  -[1]->
+  Nil | MemoryPoint.id | id 
+  @[0,3];
+
+# what the rule goal_suc_2 does is that it will keep the program which is being executed in the form of Try/Trys, Seq, and Cons nested fashion
+# which also contains the ExecutionTrace, which can be used to give the estimation of the current progress of the intention
+# since any success rule for dealing Nil strictly match Nil | ExecutionTrace.id, thus it won't be applicable to them
+# then I introduce an intermedia rule to convert it to Nil | ExecutionTrace.id
+# i do not need to covert try as in the Goal, the Reduce is pushed straight in Try
+
+react goal_suc_2_covert_seq = 
+      Reduce.Seq.(Nil | MemoryPoint.id | id | Cons.id)
+      -[1]->
+      Reduce.Seq.(Nil | ExecutionTrace.id | Cons.id)    
+      @[0,2];
+
+react goal_suc_2_covert_seq_nil = 
+      Reduce.(Nil | MemoryPoint.id | id)
+      -[1]->
+      Reduce.(Nil | ExecutionTrace.id)    
+      @[0];
+
+# instead of going through the a pre-defined failing action
+# I assign a failure token straigh away
+# it means that there is a step difference between the original semantics
+# however, given the tree structure of the intention, it makes no big difference.
+# this rule is for when FC hols before goal_init is even applied
+react goal_fail_1 =
+  Reduce.(Goal.(FC.(id | Check.T) | id) | ExecutionTrace.id)
+  -[1]->
+  ReduceF | ExecutionTrace.id 
+  @[2];
+
+# this rule is for when FC hols after goal_init is applied
+react goal_fail_2 =
+  Reduce.Goal.(MemoryPoint.id | FC.(id | Check.T) | id)
+  -[1]->
+  ReduceF | ExecutionTrace.id
+  @[0];
+
+
+
+react goal_persist_nil =
+  Reduce.Goal.(MemoryPoint.id | SC.(id | Check.F) | Trys.(Nil | ExecutionTrace.id | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(MemoryPoint.id | SC.id | Try.(id | ExecutionTrace.id | Cons.id) | FC.id)
+  @[0,1,3,0,3,4];
+
+
+react goal_persist =
+  Reduce.Goal.(MemoryPoint.id | SC.(id | Check.F) | Try.(ReduceF | ExecutionTrace.id | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(MemoryPoint.id | SC.id | Try.(id | ExecutionTrace.id | Cons.id) | FC.id)
+  @[0,1,3,0,3,4];
+
+
+# the concurrency is not being addressed atm
+# Concurrency
+# all instan rules
+react conc_nil_R=
+  Reduce.Conc.(L.Nil | R.id)
+  -[1]->
+  Conc.(L.Nil | R.Reduce.id);
+
+react conc_nil_L =
+  Reduce.Conc.(L.id | R.Nil)
+  -[1]->
+  Conc.(L.Reduce.id | R.Nil);
+
+react conc_L =
+  Reduce.Conc.(L.id | id)
+  -[1]->
+  Conc.(L.Reduce.id | id);
+
+react conc_R =
+  Reduce.Conc.(R.id | id)
+  -[1]->
+  Conc.(R.Reduce.id | id);
+
+react conc_succ =
+  Reduce.Conc.(L.Nil | R.Nil)
+  -[1]->
+  Nil;
+
+react conc_fail_L =
+  Conc.(L.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+react conc_fail_R =
+  Conc.(R.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+
+###########################################################
+## rules for estimation of progress
+
+
+
+# initiate the progress estimation
+# copy the trace to each execution trace so that i do not need label each intention
+
+react trace_check_initiate_1 =
+        ExecutionTrace.id
+       -[1]->
+        ExecutionTrace.(Copy.id | id)
+        @[0,0] if !Reduce in ctx, !Copy in param;
+
+
+react trace_check_initiate_2 =
+        Trace.id
+     || ExecutionTrace.(Copy.id | id)
+       -[1]->
+        Trace.(id | DSyne)
+     || ExecutionTrace.(Copy.id | id | EstCheck.(id | id | Unpoped))
+     @[0,1,2,0,1] if !Reduce in ctx, !DSyne in param;
+
+## in the beginning of the one transition, it first clean up the estimiation 
+## of tokens from the previous transition
+
+# the first is to remove DSyne token
+react trace_check_terminate_1 =
+        Trace.(id | DSyne)
+        -[1]->
+        Trace.id
+        if Reduce in ctx;
+
+
+# the second it to remove the previous estimiation of progress
+react trace_check_terminate_2 =
+        Progress.id
+        -[1]->
+        1
+        @[] if Reduce in ctx;
+
+
+# the third is to remove the half-checked trace against the ExecutionTrace
+react trace_check_terminate_3 =
+        EstCheck.id
+        -[1]->
+        1
+        @[] if Reduce in ctx;
+
+
+# the fourth is to remove the Copy so that next round of estimation can be initilised as well
+react trace_check_terminate_4 =
+        Copy.id
+        -[1]->
+        1
+        @[] if Reduce in ctx;
+
+
+
+# the actual check of each element of the ExecutionTrace.
+
+
+# this rule is the special case of the first element is event (as always)
+fun react check_trace_event(n) = 
+          EstCheck.(EId(n).1 | Element.(EId(n).1 | id) | Distance.id | id | Unpoped)
+          -[1]->
+          Progress.(id | id)
+          @[0,1];
+
+
+
+
+
+# the following is the method to check the execution trace when it has at least three elements
+fun react check_trace_first_event(n) = 
+          EstCheck.(EId(n).id | Element.(EId(n).1 | id) | id | Unpoped)
+          -[1]->
+          EstCheck.(id | Element.(EId(n).1 | id) | id | Progress.id)
+          @[0,1,2,1];
+
+fun react check_trace_first_plan(n) = 
+          EstCheck.(PId(n).id | Element.(PId(n).1 | id) | id | Unpoped)
+          -[1]->
+          EstCheck.(id | Element.(PId(n).1 | id) | id | Progress.id)
+          @[0,1,2,1];
+
+fun react check_trace_first_act(n) = 
+          EstCheck.(AId(n).id | Element.(AId(n).1 | id) | id | Unpoped)
+          -[1]->
+          EstCheck.(id | Element.(AId(n).1 | id) | id | Progress.id)
+          @[0,1,2,1];
+
+fun react check_trace_middle_event(n) = 
+          EstCheck.(EId(n).id | Element.(EId(n).1 | id) | id)
+          -[1]->
+          EstCheck.(id | Element.(EId(n).1 | id) | id)
+          if !Unpoped in param;
+
+fun react check_trace_middle_plan(n) = 
+          EstCheck.(PId(n).id | Element.(PId(n).1 | id) | id)
+          -[1]->
+          EstCheck.(id | Element.(PId(n).1 | id) | id)
+          if !Unpoped in param;
+
+fun react check_trace_middle_act(n) = 
+          EstCheck.(AId(n).id | Element.(AId(n).1 | id) | id)
+          -[1]->
+          EstCheck.(id | Element.(AId(n).1 | id) | id)
+          if !Unpoped in param;
+
+
+
+# here I added Distance under the Trace to avoid another parameter for distance. 
+# also atm, we can only do the estimiation of one intention
+# as we do not know which Progress is for which intention
+# so i probably need to either link ExecutionTrace and Progress, or label ExecutionTrace through labelling the intention 
+fun react check_trace_final_event(n) = 
+          EstCheck.(EId(n).1 | Element.(EId(n).1 | id) | id | Progress.id | Distance.id)
+          -[1]->
+          Progress.(id | id)
+          @[2,3];
+
+fun react check_trace_final_plan(n) = 
+          EstCheck.(PId(n).1 | Element.(PId(n).1 | id) | id | Progress.id | Distance.id)
+          -[1]->
+          Progress.(id | id)
+          @[2,3];
+
+fun react check_trace_final_act(n) = 
+          EstCheck.(AId(n).1 | Element.(AId(n).1 | id) | id | Progress.id | Distance.id)
+          -[1]->
+          Progress.(id | id)
+          @[2,3];
+
+
+
+### motivation plan library rules are the following
+react motivational_rule_parked =
+     Beliefs.(B("parked") | id)
+  || MotLib.(MotRule.(Pre.B("parked") | PB.Event{e}.id) | id)
+  || Desires.id
+  || IntentionPreProcess.id
+  -[1]->
+     Beliefs.id
+  || MotLib.(MotRule.(Pre.B("parked") | PB.Event{e}.id) | id)
+  || Desires.(id | Event{e}.(Pending | id))
+  || IntentionPreProcess.(id | IntentPreProcess.(Event{e}.id | Trace.Distance.Length(0)))
+  @[0,1,2,3,1,4,1];
+
+
+
+# # UAV case for retrieval task;
+big take_off_1 = Act.(Identifier.AId(14).1 | Pre.1 | Del.1 | Add.1);
+big take_off_2 = Act.(Identifier.AId(15).1 | Pre.1 | Del.1 | Add.1);
+big take_off_3 = Act.(Identifier.AId(16).1 | Pre.1 | Del.1 | Add.1);
+big retrieve_1 = Act.(Identifier.AId(17).1 | Pre.1 | Del.1 | Add.1);
+big retrieve_2 = Act.(Identifier.AId(18).1 | Pre.1 | Del.1 | Add.1);
+big retrieve_3 = Act.(Identifier.AId(19).1 | Pre.1 | Del.1 | Add.1);
+big return_to_base = Act.(Identifier.AId(20).1 | Pre.1 | Del.1 | Add.1);
+big activate_parking_for_retrieve = Act.(Identifier.AId(21).1 | Pre.1 | Del.1 | Add.B("parked"));
+big navigate_path_1 = Act.(Identifier.AId(22).1 | Pre.1 | Del.B("Noengine_malfunc") | Add.(B("failure") | B("engine_malfunc")));
+big navigate_path_2 = Act.(Identifier.AId(23).1 | Pre.1 | Del.1 | Add.B("success"));
+big navigate_path_3 = Act.(Identifier.AId(24).1 | Pre.1 | Del.1 | Add.B("success"));
+big send_GPS = Act.(Identifier.AId(25).1 | Pre.1 | Del.1 | Add.1);
+
+big model_retrieval =
+        Beliefs.(B("Nosensor_malfunc") | B("Noengine_malfunc"))
+     || Desires.Event{e8}.(Pending | Identifier.EId(8).1)
+     || Intentions.1
+     || Plans.(
+          PlanSet{e8}.(
+          Plan.(Identifier.PId(9).1 | Pre.(B("Nosensor_malfunc") | B("Noengine_malfunc")) | PB.(Seq.(take_off_1 | Cons.(Seq.(Goal.(SC.B("success") | Event{e9}.Identifier.EId(9).1 | FC.B("failure")) | Cons.retrieve_1)))))
+        | Plan.(Identifier.PId(10).1 | Pre.(B("Nosensor_malfunc") | B("Noengine_malfunc")) | PB.(Seq.(take_off_2 | Cons.(Seq.(Goal.(SC.B("success") | Event{e10}.Identifier.EId(10).1 | FC.B("failure")) | Cons.retrieve_2)))))
+        | Plan.(Identifier.PId(11).1 | Pre.(B("Nosensor_malfunc") | B("Noengine_malfunc")) | PB.(Seq.(take_off_3 | Cons.(Seq.(Goal.(SC.B("success") | Event{e11}.Identifier.EId(11).1 | FC.B("failure")) | Cons.retrieve_3)))))
+        | Plan.(Identifier.PId(12).1 | Pre.B("sensor_malfunc") | PB.(return_to_base))
+        | Plan.(Identifier.PId(13).1 | Pre.B("engine_malfunc") | PB.(activate_parking_for_retrieve))
+        )
+        | PlanSet{e9}.Plan.(Identifier.PId(14).1 | Pre.1 | PB.(navigate_path_1))
+        | PlanSet{e10}.Plan.(Identifier.PId(15).1 | Pre.1 | PB.(navigate_path_2))
+        | PlanSet{e11}.Plan.(Identifier.PId(16).1 | Pre.1 | PB.(navigate_path_3))
+        | PlanSet{e12}.Plan.(Identifier.PId(17).1 | Pre.1 | PB.(send_GPS)))
+     || PreProcess.1
+     || MotLib.MotRule.(Pre.B("parked") | PB.Event{e12}.Identifier.EId(12).1);
+
+
+
+# properties declaration
+
+
+big event_success_e8 = Event{e8}.(Success | Identifier.EId(8).1);
+
+
+big intention_nil_e8 = Intent{e8}.(Identifier.EId(8).1 | Nil | id);
+
+
+big event_success_e12 = Event{e12}.(Success | Identifier.EId(12).1);
+
+
+big intention_nil_e12 = Intent{e12}.(Identifier.EId(12).1 | Nil | id);
+
+
+begin brs
+    string n = {"success", "failure", "battery_low", "bad_weather", "Nobattery_low", "Nobad_weather", "ram", "storage", "sensor_malfunc", "Nosensor_malfunc", "engine_malfunc", "Noengine_malfunc", "parked"};
+    # cap for the length
+    int lengthcap = 20;
+    int nl = [0:1:lengthcap];
+    # plan id couting
+    int pidcap = 20;
+    int pl = [0:1:pidcap];  
+    # event id couting
+    int eidcap = 15;
+    int el = [0:1:eidcap]; 
+    # action id couting
+    int aidcap = 30;
+    int al = [0:1:aidcap]; 
+    # init model_patrolling;
+    # init model_concurrency;
+    init model_retrieval;
+
+    rules = [  
+
+ 
+           # Instan rules for progress estimation
+           # the very first is to eliminate the tokens for previous step's progress estimation
+            (trace_check_terminate_1, 
+             trace_check_terminate_2, 
+             trace_check_terminate_3,
+             trace_check_terminate_4),
+
+
+
+
+
+
+
+
+            # INSTAN RULES FOR PREPROCESSING
+            # the philosophy of the order of the rules:
+            # 1. only adding Reduce is the normal rules and the rest the instan rules
+            # 2. the rules for supplementary structural manipulation always come first
+            # 3. the rules for progressing the leaf nodes comes second
+            # 4. the rules for passing Reduce in the AND/OR tree comes third
+
+            # change to Trys control
+             (try_succ_unique_analysis),
+
+
+            # final end rule when all traces has been recorded
+             (intention_done_succ_analysis_end),
+
+            # eliminate the program Reduce.(PlanSet{ps}.1 | Trace.(Distance.Length(n) | id)) after the rule select_plan_analysis
+            # eliminate the program Reduce.1 after the rule try_seq_multiple_analysis
+             (select_plan_analysis_end, reduce_try_multiple_analysis_end),
+
+            # actually reduce the programs: the leaf node of the AND/OR tree
+            (select_plan_analysis(nl), 
+             reduce_event_analysis(nl), 
+             act_analysis(nl), 
+             goal_to_event_analysis(nl),
+             intention_done_succ_analysis(nl)),
+
+            # special cases of rules specifying how the AND/OR tree is explored
+            # (conc_succ_analysis(nl)),
+            # conc_succ has to have a higher priority than both conc_nil_L and conc_nil_R           
+            # (conc_nil_L_analysis, conc_nil_R_analysis), 
+            # non-determinism of rules have to be modified to be instan rules when branching
+            # {conc_L_analysis, conc_R_analysis},
+
+            # special cases of rules to specify how the AND/OR tree should be explored
+             (seq_succ_analysis), 
+
+             (reduce_try_succ_multiple_analysis(nl)),
+             (reduce_try_succ_single_analysis(nl)),
+
+            # non-special cases of rules to specify how the AND/OR tree should be explored
+            # reduce_seq_analysis cannot be in the same priority order with try_seq_X_analysis
+            # otherwise after try_seq_X_analysis, the reduce_seq_analysis can kick in straight after 
+            # when, as a matter of fact, seq_succ_analysis is actually needed. 
+             (reduce_seq_analysis), 
+
+             (reduce_try_multiple_analysis),
+             (reduce_try_single_analysis),
+
+            # adding event to intention
+             (a_event_analysis),
+
+            # adding Reduce to push the progress of the tree
+             (intention_step_analysis),
+            
+            # copy desires to desirespreprocessing
+             (copy_desires_to_desirepreprocess),
+
+
+            # ################################  INSTAN RULES FOR ACTUAL EXECUTION
+
+
+
+            # add CheckToken for all initial user-specified plans    
+            (init_plansets),
+
+            # Plan selection token housekeeping
+            (reset_planset),
+
+            # change to Trys control
+            (try_succ_unique),
+
+            # execution trace revision upon failure
+            (reach_nearest_event(el)),
+            (pop_plan(pl), pop_action(al)),
+
+            # Atomic set ops
+            ( check_T(n),
+              check_end, 
+              check_F(n), 
+              add_notin(n), 
+              add_in(n),
+              add_end,
+              del_in(n), 
+              del_notin(n),
+              delete_end
+            ),
+
+            # if the intention already succeeds or failed, then do it
+            (intention_done_succ, intention_done_F),
+
+
+
+            # any leaf node program can be reduced 
+            (reduce_event(el), 
+             act_T(al), 
+             act_F, 
+             select_plan_F
+             ),
+
+            # the program converter after SC holds
+            (goal_suc_2_covert_seq, 
+             goal_suc_2_covert_seq_nil
+            ),
+
+
+            # to reduce a declarative goal in case of SC or FC holds
+            ( goal_suc_1,
+              goal_suc_2,
+              goal_fail_1,
+              goal_fail_2
+            ),
+
+            # to see if the declarative goal needs to be repeated upon completion or failure
+            (goal_persist_nil, 
+             goal_persist),
+
+
+            # if none of above rules for declarative goal is applicable, then the initialisation of the declarative goal
+            (goal_init),
+
+            # the initialisation of declarative for execution trace rememberance
+            (store_memory_goal),
+
+
+
+
+            # if checking has not been do, do it now when you have nothing to do
+            (act_check, 
+             select_plan_check, 
+             goal_check
+            ),
+
+
+
+ 
+
+            # no meanful program reduction can be done
+            # therefore, we now push Reduce around to do structural reduction
+            # seq is at lower lever than try, therefore it comes first
+            (seq_succ,
+             seq_fail
+            ), 
+            (try_succ,
+             try_failure
+            ),
+
+            # non-special cases of rules to specify how the AND/OR tree should be explored
+            (goal_reduce),       
+            (reduce_seq),  
+            (reduce_try),
+
+
+           
+
+            # if nothing can be done to an existing intention, see if a new event can be added to intention
+            (a_event),
+
+
+            
+
+
+
+           ######################## Instan rules for progress estimation
+           # the very last part of rules is to provide the current step's estimation after the reduce is dropped
+
+
+           # the first is to check if it is the only first element in the execution trace
+            (check_trace_event(el)),
+
+           # the first is to try the last event/plan/action
+            (check_trace_final_act(al)),
+            (check_trace_final_plan(pl)), 
+            (check_trace_final_event(el)), 
+
+           # the second is to try the middle event/plan/action
+           # i cannot put them in the same priority, just 
+           # in case it does one more step when the next one
+           # actually requires the final element check 
+
+            (check_trace_middle_act(al)),
+            (check_trace_middle_plan(pl)), 
+            (check_trace_middle_event(el)), 
+
+           # the third is to try the first  event/plan/action
+
+            (check_trace_first_act(al)),
+            (check_trace_first_plan(pl)), 
+            (check_trace_first_event(el)), 
+
+           # the final is to initiate the check of estimation of progress
+            (trace_check_initiate_2),
+            (trace_check_initiate_1),
+
+
+
+            ## normal rules for pre-processing
+            # starting the pre-processing
+            {start_preprocessing},
+
+
+
+            ## normal rules for actual execution
+            # selecting plan takes a higher priority than adding a Reduce
+            {select_plan_T(pl)},
+            {intention_step},
+            
+            # iniating the motivation library 
+            {motivational_rule_parked}
+
+            ];
+            preds = {event_success_e8, intention_nil_e8, event_success_e12, intention_nil_e12};
+end

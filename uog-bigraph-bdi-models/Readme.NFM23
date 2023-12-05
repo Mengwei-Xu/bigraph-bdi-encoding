@@ -1,0 +1,79 @@
+Readme Please
+
+The following is the detailed instruction of how to reproduce the evaluation of the examples in NFM23.
+
+The two main file are MDP_BDI_Packaging.big and MDP_BDI_Rover.big which corresponds the two simple example in the submission. 
+
+To run with BigraphER to get the underlying labelled MDP transition
+
+Please run the following command (the binary of BigraphER can be obtained here: https://uog-bigraph.bitbucket.io/) to inspect the entire transition system
+
+bigrapher full -f svg -t index.svg -s . --solver=MCARD -M 5000 MDP_BDI_Packaging.big
+
+bigrapher full -f svg -t index.svg -s . --solver=MCARD -M 5000 MDP_BDI_Rover.big
+
+
+To export the underlying transition systems from Bigraph we can run
+
+1. For packaging example: 
+
+bigrapher full -p packaging.tra -l packaging.csl  --solver=MCARD -M 5000 MDP_BDI_Packaging.big
+
+After obtaining the file packaging.csl, please add the follwing properties in packaging.csl file
+Pmin=? [ F "b1s_b2s"];
+Pmax=? [ F "b1s_b2s"];
+Pmax=? [ F ("cheap_bag_selected_for_box_1" &  "cheap_bag_selected_for_box_2" & "b1s_b2s")];
+Pmax=? [ F (("cheap_bag_selected_for_box_1" |  "cheap_bag_selected_for_box_2") & "b1s_b2s")];
+multi(Pmax=? [ F "b1s_b2s"], Pmax=? [ F ("cheap_bag_selected_for_box_1" |  "cheap_bag_selected_for_box_2")]);
+
+PS: 
+----------------------------------------------------------------------------------------------------------
+1. Pmin=? [ F "b1s_b2s"] = 0 showing that careless decision can have a very bad consequence
+2. Pmax=? [ F "b1s_b2s"] > 0 showing that there is a way to achieve what we want so we can generate the strategy
+3. Pmax=? [ F ("cheap_bag_selected_for_box_1" &  "cheap_bag_selected_for_box_2" & "b1s_b2s")] = 0 showing that there is no way to use cheap bags for both products while achieving dealing with both products successfully. 
+4. Pmax=? [ F (("cheap_bag_selected_for_box_1" |  "cheap_bag_selected_for_box_2") & "b1s_b2s")] > 0; showing that there is a way to use cheap bag for one of the products while making sure they can all be dealt successfully so we can generate the strategy
+5. multi(Pmax=? [ F "b1s_b2s"], Pmax=? [ F ("cheap_bag_selected_for_box_1" |  "cheap_bag_selected_for_box_2")]) visualises the trade-off between what we want to achieve. 
+-----------------------------------------------------------------------------------------------------------
+
+Then we can use PRISM to conduct analysis using the command such as (please build your own prism binary from prism website: http://www.prismmodelchecker.org/)
+
+For quantitative verification, please run the command such as
+
+prism -importtrans packaging.tra packaging.csl
+
+For strategy synthesis, please run the command such as
+
+prism -importtrans packaging.tra packaging.csl -pctl 'Pmax=? [ F "b1s_b2s"]' -exportadv adv.tra -s 
+
+
+
+2. For rover example: 
+
+To export the underlying transition systems from Bigraph we can run (this time, we also need to export the transition reward)
+
+
+bigrapher full -p rover_tra.tra -l rover_csl.csl -R rover_trew.trew  --solver=MCARD -M 5000 MDP_BDI_Rovers.big
+
+
+Since our BigraphER imported transition files do not have the exact same structure required for Storm, we wrote a short script file (which we attached as well) to do the translation (format-bigrapher-for-storm.sh).
+
+Please run the following lines to do the translation first:
+
+./format-bigrapher-for-storm.sh rover_tra
+./format-bigrapher-for-storm.sh rover_csl
+./format-bigrapher-for-storm.sh rover_trew
+
+Then open a new file and name it as rover_properties.csl and add the following properties in it
+Pmin=? [ F "s1_s2"];
+Pmax=? [ F "s1_s2"];
+Pmax=? [ F "s1_s2"];
+
+To run the Storm model checker, please go to its website and build the binary first:https://www.stormchecker.org/index.html
+
+To do verification, please run the following command:
+
+~/storm/build/bin/./storm --explicit rover_tra-storm.tra rover_csl-storm.lab --transrew rover_trew-storm.trew --prop rover_properties.csl
+
+To synthesise strategy, please run the following command:
+~/storm/build/bin/./storm --explicit rover_tra-storm.tra rover_csl-storm.lab --transrew rover_trew-storm.trew --prop rover_properties.csl --exportscheduler rover.sched
+

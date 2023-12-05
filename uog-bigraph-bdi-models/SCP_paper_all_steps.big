@@ -1,0 +1,505 @@
+ctrl Check = 1;
+ctrl Del = 0;
+ctrl Add = 0;
+ctrl CheckRes = 1;
+atomic ctrl T = 0; # true
+atomic ctrl F = 0; # false
+
+ctrl Intentions = 0;
+ctrl Intent = 0;
+
+ctrl Desires = 0;
+
+ctrl Beliefs = 0;
+atomic fun ctrl B(n) = 0;
+
+ctrl Reduce = 0;
+atomic ctrl ReduceF = 0;
+atomic ctrl GReduceF = 0;
+
+ctrl Act = 0;
+ctrl Pre = 0;
+
+atomic ctrl Event = 1;
+
+ctrl Plans = 0;
+ctrl PlanSet = 1;
+ctrl Plan = 0;
+ctrl PB = 0;
+
+# Tree
+ctrl Try = 0; #OR-Like
+ctrl Seq = 0; #AND-Like
+ctrl Cons = 0;
+
+ctrl Conc = 0;
+ctrl L = 0;
+ctrl R = 0;
+
+atomic ctrl CheckToken = 0;
+
+ctrl Goal = 0;
+ctrl SC = 0;
+ctrl FC = 0;
+
+## END Controls
+
+fun react check_T(n) =
+Beliefs.(B(n) | id | Check{l}.(B(n) | id))
+-[1]->
+Beliefs.(B(n) | id | Check{l}.id);
+
+react check_end =
+/l (Beliefs.(id | Check{l}.1) || CheckRes{l}.1)
+-[1]->
+/l (Beliefs.id || CheckRes{l}.T);
+
+fun react check_F(n) =
+/l (Beliefs.(id | Check{l}.(B(n) | id)) || CheckRes{l}.1)
+-[1]->
+/l (Beliefs.id || CheckRes{l}.F)
+@[0] if !B(n) in param;
+
+react check_false_term =
+/l (Beliefs.(id | Check{l}.(F | id)) || CheckRes{l}.1)
+-[1]->
+/l (Beliefs.id || CheckRes{l}.F) @[0];
+
+fun react add_notin(n) =
+Beliefs.(Add.(B(n) | id) | id)
+-[1]->
+Beliefs.(Add.id | B(n) | id) @[0,1] if !B(n) in param;
+
+fun react add_in(n) =
+Beliefs.(Add.(B(n) | id) | B(n) | id)
+-[1]->
+Beliefs.(Add.id | B(n) | id) @[0,1];
+
+react add_end =
+Beliefs.(Add.1 | id)
+-[1]->
+Beliefs.id;
+
+fun react del_in(n) =
+Beliefs.(Del.(B(n) | id) | B(n) | id)
+-[1]->
+Beliefs.(Del.id | id);
+
+fun react del_notin(n) =
+Beliefs.(Del.(B(n) | id) | id)
+-[1]->
+Beliefs.(Del.id | id) if !B(n) in param;
+
+react delete_end =
+Beliefs.(Del.1 | id)
+-[1]->
+Beliefs.id @[0];
+
+## END Beliefs
+
+## Core actions
+react act_check =
+Beliefs.id
+|| Reduce.Act.(Pre.id | Add.id | Del.id)
+-[1]->
+/l (
+Beliefs.(id | Check{l}.id)
+|| Reduce.Act.(Pre.id | Add.id | Del.id | CheckRes{l}.1))
+@[0,1,1,2,3];
+
+react act_T =
+Beliefs.id
+|| Reduce.Act.(Pre.id | Add.id | Del.id | /l CheckRes{l}.T)
+-[1]->
+Beliefs.(id | Add.id | Del.id)
+|| 1
+@[0,2,3];
+
+react act_F =
+Reduce.Act.(Pre.id | Add.id | Del.id | /l CheckRes{l}.F)
+-[1]->
+ReduceF @[];
+
+# Event
+react reduce_event =
+Reduce.Event{ps}
+|| Plans.(PlanSet{ps}.id | id)
+-[1]->
+PlanSet{ps}.id
+|| Plans.(PlanSet{ps}.id | id)
+@[0,0,1];
+
+# Plan Selection
+react select_plan_check =
+Beliefs.id
+|| Reduce.PlanSet{ps}.(Plan.(Pre.id | CheckToken | id) | id)
+-[1]->
+/l (
+Beliefs.(id | Check{l}.id)
+|| Reduce.PlanSet{ps}.(Plan.(Pre.id | CheckRes{l}.1 | id) | id))
+@[0,1,1,2,3];
+
+react select_plan_T =
+Reduce.PlanSet{ps}.(Plan.(Pre.id | /l CheckRes{l}.T | PB.id) | id)
+-[1]->
+Try.(id | Cons.PlanSet{ps}.id)
+@[1,2];
+
+react select_plan_F =
+Reduce.PlanSet{ps}.id
+-[1]->
+{ps} | ReduceF @[]
+if !CheckToken in param, !CheckRes{l}.T in param;
+
+react reset_planset =
+Try.(id | Cons.PlanSet{ps}.(Plan.(/l CheckRes{l}.id | id) | id))
+-[1]->
+Try.(id | Cons.PlanSet{ps}.(Plan.(CheckToken | id) | id))
+@[0,2,3];
+
+react init_plansets =
+Plans.(PlanSet{ps}.(Plan.(Pre.id | PB.id) | id) | id)
+-[1]->
+Plans.(PlanSet{ps}.(Plan.(CheckToken | Pre.id | PB.id) | id) | id);
+
+# Sequencing
+react reduce_seq =
+Reduce.Seq.(id | Cons.id)
+-[1]->
+Seq.(Reduce.id | Cons.id);
+
+react seq_succ =
+Reduce.Seq.Cons.id
+-[1]->
+Reduce.id;
+
+react seq_fail =
+Seq.(ReduceF | Cons.id)
+-[1]->
+ReduceF @[];
+
+## Failure Recovery
+react try_seq =
+Reduce.Try.(id | Cons.id)
+-[1]->
+Try.(Reduce.id | Cons.id);
+
+react try_succ =
+Reduce.Try.Cons.id
+-[1]->
+1 @[];
+
+react try_failure =
+Try.(ReduceF | Cons.id)
+-[1]->
+Reduce.id;
+
+# Top Level Steps
+# Constraint step < {failed_event, suc_event}
+react a_event =
+Desires.(id | Event{e})
+|| Intentions.id
+-[1]->
+Desires.id
+|| Intentions.(id | Intent.Event{e});
+
+react intention_step =
+Intentions.(id | Intent.id)
+-[1]->
+Intentions.(id | Intent.Reduce.id);
+
+react intention_done_F =
+Intentions.(id | Intent.Reduce.ReduceF)
+-[1]->
+Intentions.id;
+
+react intention_done_succ =
+Intent.Reduce.1 -[1]-> 1;
+
+# Concurrency
+react conc_nil_R=
+Reduce.Conc.(L.1 | R.id)
+-[1]->
+Conc.(L.1 | R.Reduce.id);
+
+react conc_nil_L =
+Reduce.Conc.(L.id | R.1)
+-[1]->
+Conc.(L.Reduce.id | R.1);
+
+react conc_L =
+Reduce.Conc.(L.id | id)
+-[1]->
+Conc.(L.Reduce.id | id);
+
+react conc_R =
+Reduce.Conc.(R.id | id)
+-[1]->
+Conc.(R.Reduce.id | id);
+
+react conc_succ =
+Reduce.Conc.(L.1 | R.1)
+-[1]->
+1;
+
+react conc_fail_L =
+Conc.(L.ReduceF | id)
+-[1]->
+ReduceF @[];
+
+react conc_fail_R =
+Conc.(R.ReduceF | id)
+-[1]->
+ReduceF @[];
+
+
+# Declarative goals #
+react goal_check =
+Beliefs.id
+|| Reduce.Goal.(SC.id | id | FC.id)
+-[1]->
+/l1 /l2 (
+Beliefs.(id | Check{l1}.id | Check{l2}.id)
+|| Reduce.Goal.(SC.(id | CheckRes{l1}.1) | id | FC.(id | CheckRes{l2}.1))
+)
+@[0,1,3,1,2,3]
+if !CheckRes{l} in param;
+
+react goal_suc =
+Reduce.Goal.(SC.(id | /l CheckRes{l}.T) | id)
+-[1]->
+1 @[];
+
+react goal_fail =
+Reduce.Goal.(FC.(id | /l CheckRes{l}.T) | id)
+-[1]->
+Act.(Pre.F | Add.1 | Del.1) @[];
+
+react goal_init =
+Reduce.Goal.(SC.(id | /l CheckRes{l}.F) | id | FC.(id | /l CheckRes{l}.F))
+-[1]->
+Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+@[0,1,1,2];
+
+react goal_reduce =
+Reduce.Goal.(SC.(id | /l CheckRes{l}.F) | Try.(id | Cons.id) | FC.(id | /l CheckRes{l}.F))
+-[1]->
+Goal.(SC.id | Try.(Reduce.id | Cons.id) | FC.id);
+
+react goal_persist_nil =
+Reduce.Goal.(SC.(id | /l CheckRes{l}.F) | Try.(1 | Cons.id) | FC.(id | /l CheckRes{l}.F))
+-[1]->
+Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+@[0,1,1,2];
+
+
+# the following rule is used as instan rules
+# because I have the problem that when there is no plan applicable for the top event in the declarative goal
+# i.e. goal(SC.id | Try.(Reduce.F | Cons.id) | FC.id)
+# the current order of the rules would apply try_failure (which is not what we want)
+# as we want goal_persist
+# however in order to apply goal_persist, Reduce needs to be introduced (i.e. application of rule Intention_step)
+# so the best way to fix this is to create a new type for ReduceF in declarative goal for the top-level failure
+# the none-top-level failure can still be handled by the try_failure though in the declarative goal.
+react goal_root_failure_transform = 
+Goal.(id | Try.(ReduceF | Cons.id))
+-[1]->
+Goal.(id | Try.(GReduceF | Cons.id));
+
+
+react goal_persist =
+Reduce.Goal.(SC.(id | /l CheckRes{l}.F) | Try.(GReduceF | Cons.id) | FC.(id | /l CheckRes{l}.F))
+-[1]->
+Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+@[0,1,1,2];
+
+# # # # UAV case which the battery becomes low when patrolling
+big patrol = Act.(Pre.1 | Del.1 | Add.1);
+big patrolBattery = Act.(Pre.1 | Del.B("Nobattery_low") | Add.(B("success") | B("battery_low")));
+big patrolWeather = Act.(Pre.1 | Del.B("Nobad_weather") | Add.(B("success") | B("bad_weather")));
+big request = Act.(Pre.1 | Del.1 | Add.1);
+big wait = Act.(Pre.1 | Del.1 | Add.1);
+big charge = Act.(Pre.1 | Del.(B("success") | B("battery_low")) | Add.B("Nobattery_low"));
+big activate_parking = Act.(Pre.1 | Del.(B("success") | B("bad_weather")) | Add.B("Nobad_weather"));
+
+big model_1 =
+        Beliefs.(B("Nobattery_low") | B("Nobad_weather"))
+     || Desires.Event{e1}
+     || Intentions.1
+     || Plans.(
+            PlanSet{e1}.(
+            Plan.(Pre.1 | PB.Goal.(SC.F | Event{e2} | FC.F))
+            )
+            | PlanSet{e2}.(
+              Plan.(Pre.1 | PB.(Seq.(Goal.(SC.B("success") | Event{e3} | FC.F) | Cons.Event{e4})))
+            )
+            | PlanSet{e3}.(
+              Plan.(Pre.1 | PB.(patrolBattery))
+            )
+            | PlanSet{e4}.(
+                Plan.(Pre.B("battery_low") | PB.(Seq.(request | Cons.(Seq.(wait | Cons.charge)))))
+              | Plan.(Pre.B("bad_weather") | PB.(activate_parking))
+            )
+          );
+
+# # UAV case for concurrent sensing tasks
+# # it should give one case that the event Event{e5} is achieved and the other is not achieved
+# # I ran this example and it did give me two end results.
+big collect_dust = Act.(Pre.B("ram") | Del.B("ram") | Add.1);
+big analyse = Act.(Pre.1 | Del.1 | Add.1);
+big send_back = Act.(Pre.B("storage") | Del.1 | Add.(B("ram") | B("storage")));
+big focus_camera = Act.(Pre.1 | Del.1 | Add.1);
+big save_shots = Act.(Pre.B("storage") | Del.B("storage") | Add.1);
+big zip_shots = Act.(Pre.B("ram") | Del.1 | Add.(B("ram") | B("storage")));
+
+big model_2 =
+        Beliefs.(B("ram") | B("storage"))
+     || Desires.(Event{e5})
+     || Intentions.1
+     || Plans.(
+          PlanSet{e5}.Plan.(Pre.1 | PB.(Conc.(L.Event{e6} | R.Event{e7})))
+        | PlanSet{e6}.Plan.(Pre.(B("ram") | B("storage")) | PB.(Seq.(collect_dust | Cons.(Seq.(analyse | Cons.send_back)))))
+        | PlanSet{e7}.Plan.(Pre.(B("ram") | B("storage")) | PB.(Seq.(focus_camera | Cons.(Seq.(save_shots | Cons.zip_shots)))))
+     );
+
+
+big model_3 =
+        Beliefs.(B("ram") | B("storage"))
+     || Desires.(Event{e6} | Event{e7})
+     || Intentions.1
+     || Plans.(
+          PlanSet{e6}.Plan.(Pre.(B("ram") | B("storage")) | PB.(Seq.(collect_dust | Cons.(Seq.(analyse | Cons.send_back)))))
+        | PlanSet{e7}.Plan.(Pre.(B("ram") | B("storage")) | PB.(Seq.(focus_camera | Cons.(Seq.(save_shots | Cons.zip_shots)))))
+     );
+
+
+
+
+big take_off = Act.(Pre.1 | Del.1 | Add.1);
+big retrieve = Act.(Pre.1 | Del.1 | Add.1);
+big return_to_base = Act.(Pre.1 | Del.1 | Add.1);
+big activate_parking_for_retrieve = Act.(Pre.1 | Del.1 | Add.1);
+big send_GPS = Act.(Pre.1 | Del.1 | Add.1);
+big navigate_path_1 = Act.(Pre.1 | Del.B("Noengine_malfunc") | Add.(B("failure") | B("engine_malfunc")));
+big navigate_path_2 = Act.(Pre.1 | Del.1 | Add.B("success"));
+big navigate_path_3 = Act.(Pre.1 | Del.1 | Add.B("success"));
+
+big model_4 =
+        Beliefs.(B("Nosensor_malfunc") | B("Noengine_malfunc"))
+     || Desires.(Event{e8})
+     || Intentions.1
+     || Plans.(
+          PlanSet{e8}.(
+          Plan.(Pre.(B("Nosensor_malfunc") | B("Noengine_malfunc")) | PB.(Seq.(take_off | Cons.(Seq.(Goal.(SC.B("success") | Event{e9} | FC.B("failure")) | Cons.retrieve)))))
+        | Plan.(Pre.(B("Nosensor_malfunc") | B("Noengine_malfunc")) | PB.(Seq.(take_off | Cons.(Seq.(Goal.(SC.B("success") | Event{e10} | FC.B("failure")) | Cons.retrieve)))))
+        | Plan.(Pre.(B("Nosensor_malfunc") | B("Noengine_malfunc")) | PB.(Seq.(take_off | Cons.(Seq.(Goal.(SC.B("success") | Event{e11} | FC.B("failure")) | Cons.retrieve)))))
+        | Plan.(Pre.B("sensor_malfunc") | PB.(return_to_base))
+        | Plan.(Pre.B("engine_malfunc") | PB.(Seq.(activate_parking_for_retrieve | Cons.send_GPS)))
+        )
+        | PlanSet{e9}.Plan.(Pre.1 | PB.(navigate_path_1))
+        | PlanSet{e10}.Plan.(Pre.1 | PB.(navigate_path_2))
+        | PlanSet{e11}.Plan.(Pre.1 | PB.(navigate_path_3))
+     );
+
+
+
+# this is the two type of properties we would like to check
+# first to track that the intention is completed and removed, thus empty
+big failure = Intent.ReduceF;
+big no_failure = Intent.1;
+big empty_intention = Intentions.1;
+
+begin pbrs
+    string vars = {"success", "failure", "coach_on_time", "flight_on_time", "budget_allowed", "car", "battery_low", "bad_weather", "Nobattery_low", "Nobad_weather", "ram", "storage", "dust_data", "image_data", "sensor_malfunc", "Nosensor_malfunc", "engine_malfunc", "Noengine_malfunc"};
+    #init model_1;
+    #init model_2;
+    #init model_3;
+     init model_4;
+     rules = [
+             (init_plansets),
+             (goal_root_failure_transform),
+
+             # Atomic set ops
+             {check_end, 
+              check_T(vars), 
+              check_F(vars), 
+              check_false_term,
+              del_in(vars), 
+              del_notin(vars),
+              delete_end, add_end,
+              add_notin(vars), 
+              add_in(vars)
+             },
+
+             # Plan selection token housekeeping
+             {reset_planset},
+
+             # most special cases of rules which specify how the AND/OR tree should be explored for handling success and failure conditions
+             # excluding declarative goals
+             { seq_succ,
+               seq_fail,
+               try_succ,
+               try_failure,
+               conc_succ,
+               conc_fail_L,
+               conc_fail_R
+             },
+             
+             # less special cases of rules compared to conc_succ for specify how concurrency should be handled
+             # in the case of only one of the components is completed.
+             {
+               conc_nil_L, 
+               conc_nil_R
+             },
+
+             # general cases of rules  which specify how the AND/OR tree should be explored
+             # excluding declarative goals as checks are always needed before doing anything to a declarative goal.  
+             {
+               reduce_seq,
+               try_seq,
+               conc_L,
+               conc_R
+             },
+
+             # actually reduce the programs 
+             {
+              act_check,
+              act_T,
+              act_F,
+              select_plan_check,
+              select_plan_T,          
+              select_plan_F,
+              reduce_event,  
+              goal_check,
+              goal_suc,
+              goal_fail,
+              goal_persist_nil,
+              goal_persist
+             },
+
+             # if no success, failure, or persistence, then try to reduce in general way
+             {
+              goal_reduce
+             },
+
+             # if cannot reduce, then it means the initialisation has not been done yet. 
+             { 
+              goal_init 
+             },
+
+             # Agent level operations
+
+             # special case agent-level operations
+             {
+              intention_done_F,
+              intention_done_succ
+             },
+
+             # general case agent-level operations
+             {
+              a_event,
+              intention_step
+             }
+             ];
+             preds = {failure, no_failure, empty_intention};
+end
