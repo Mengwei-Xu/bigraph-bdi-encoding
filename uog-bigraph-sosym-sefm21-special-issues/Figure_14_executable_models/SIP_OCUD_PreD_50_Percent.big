@@ -1,0 +1,877 @@
+# the probabilisic extension of CAN Semantic Model from "Modelling and Verifying BDI Agents with Bigraphs. Xu et al"
+# intention_step and other non-deterministc rules (e.g. plan selection) are normal rules 
+# the rest of rules are instantenous rules
+# the idea is that when an Reduce is added, 
+# after the applications of all instantenous rules in the background, the next step is produced.  
+
+## CONTROLS
+
+ctrl Check = 0;
+ctrl Del = 0;
+ctrl Add = 0;
+atomic ctrl T = 0; # true
+atomic ctrl F = 0; # false
+
+ctrl Intentions = 0;
+ctrl Intent = 1;
+
+ctrl Desires = 0;
+
+ctrl Beliefs = 0;
+
+# the belief atom is extended with two parameters
+# first is to denote the product, i.e. m'th box
+# the second is the actual belief atoms in the form of string.
+atomic fun ctrl B(m,n) = 0;
+
+ctrl Reduce = 0;
+atomic ctrl ReduceF = 0;
+
+ctrl Act = 0;
+ctrl Pre = 0;
+
+ctrl Event = 1;
+
+# the status token is added.
+atomic ctrl Idle = 0;
+atomic ctrl Active = 0;
+atomic ctrl Success = 0;
+atomic ctrl Failure = 0;
+atomic fun ctrl EId(n) = 0;
+# declarative information for an event in the Desires
+atomic fun ctrl Deadline(n) = 0;
+atomic fun ctrl Progress(n) = 0;
+
+# the Step(n) is introduced to count the step of the agent. 
+atomic fun ctrl Step(n) = 0;
+
+
+ctrl Plans = 0;
+ctrl PlanSet = 1;
+ctrl Plan = 0;
+ctrl PB = 0;
+atomic fun ctrl PId(n) = 0;
+
+# Tree
+ctrl Try = 0; #OR-Like
+ctrl Seq = 0; #AND-Like
+ctrl Cons = 0;
+
+ctrl Conc = 0;
+ctrl L = 0;
+ctrl R = 0;
+
+
+atomic ctrl CheckToken = 0;
+
+ctrl Goal = 0;
+ctrl SC = 0;
+ctrl FC = 0;
+
+# I need to add Nil to get away from some sutble problems for instantenous rules
+# Nil stands for 1 
+atomic ctrl Nil = 0;
+
+# the sames reason to introduce Trys to get away from some sutble problems for instantenous rules
+# detailed reason can be requested in person
+# Try for special case:
+ctrl Trys = 0;
+
+
+# Synchronisation token
+# this token is to serve as switch-off/on to update the deadline of the events
+atomic ctrl DSync = 0;
+
+
+
+# Preference
+ctrl Preference = 0;
+ctrl Situation = 0;
+atomic fun ctrl PrefWeight(n) = 0;
+atomic ctrl CalculationToken = 0;
+atomic ctrl Original = 0;
+
+
+# stochastic actions
+ctrl Effect = 0;
+atomic fun ctrl EffWeight(n) = 0;
+
+
+# new controls for deciding which agent-level operation should be applied
+# atm it is the fixed distribution
+atomic ctrl ChooseAevent = 0;
+atomic fun ctrl AeventWeight(n) = 0;
+atomic ctrl ChooseAstep = 0;
+atomic fun ctrl AstepWeight(n) = 0;
+atomic ctrl ChooseAupdate = 0;
+atomic fun ctrl AupdateWeight(n) = 0;
+
+# the control that unifies ReduceF and Nil
+atomic ctrl Unprogressable = 0;
+
+
+
+# the control tokens to capture when the product is packed or its deadline is reached
+atomic fun ctrl ProductPacked(n) = 0;
+atomic fun ctrl ProductDeadlineReached(n) = 0;
+
+## END Controls
+
+# Check contains the formula to be checked against the belief base
+# Check cannot be nested under the Beliefs 
+# as it will cause problems in the rule check_F(n) when declared as instan rules.
+# when there are some same formulas in two different check due to our weak condition check (cannot say which id the param is against)
+# Instead I nest Check under the entity (e.g. plans) for which the check is needed
+# and giving the final check result as child of Check
+# thus no link and no CheckRes control needed
+
+# also the belief check and add/deletion function is extended for B(m,n)
+
+fun react check_T(m,n) =
+    Beliefs.(B(m,n) | id) || Check.(B(m,n) | id)
+    -[1]->
+    Beliefs.(B(m,n) | id) || Check.id;
+
+react check_end =
+    Beliefs.id || Check.1
+    -[1]->
+    Beliefs.id || Check.T;
+
+fun react check_F(m,n) =
+    Beliefs.id || Check.(B(m,n) | id)
+    -[1]->
+    Beliefs.id || Check.F
+    @[0] if !B(m,n) in param;
+
+
+fun react add_notin(m,n) =
+    Beliefs.(Add.(B(m,n) | id) | id)
+    -[1]->
+    Beliefs.(Add.id | B(m,n) | id) @[0,1] if !B(m,n) in param;
+
+fun react add_in(m,n) =
+    Beliefs.(Add.(B(m,n) | id) | B(m,n) | id)
+    -[1]->
+    Beliefs.(Add.id | B(m,n) | id) @[0,1];
+
+react add_end =
+    Beliefs.(Add.1 | id)
+    -[1]->
+    Beliefs.id;
+
+fun react del_in(m,n) =
+    Beliefs.(Del.(B(m,n) | id) | B(m,n) | id)
+    -[1]->
+    Beliefs.(Del.id | id);
+
+fun react del_notin(m,n) =
+    Beliefs.(Del.(B(m,n) | id) | id)
+    -[1]->
+    Beliefs.(Del.id | id) if !B(m,n) in param;
+
+react delete_end =
+    Beliefs.(Del.1 | id)
+    -[1]->
+    Beliefs.id @[0];
+
+
+
+## END Beliefs
+
+## Core actions
+react act_check =
+  Reduce.Act.(Pre.id | id)
+  -[1]->
+  Reduce.Act.(Pre.id | id | Check.id)
+  @[0,1,0] if !Check in param;
+
+# action execution is extended to model the stochastic effects of action
+fun react act_T(n) =
+     Beliefs.id
+  || Reduce.Act.(id | Effect.(Add.id | Del.id | EffWeight(n)) | Check.T)
+  -[n]->
+     Beliefs.(id | Add.id | Del.id)
+  || Nil
+  @[0,2,3];
+
+
+react act_F =
+  Reduce.Act.(id | Check.F)
+  -[1]->
+  ReduceF @[];
+
+
+react reduce_event =
+    Reduce.Event{ps}.1
+ || Plans.(PlanSet{ps}.id | id)
+ -[1]->
+    PlanSet{ps}.id
+ || Plans.(PlanSet{ps}.id | id)
+ @[0,0,1];
+
+
+# Plan Selection
+react select_plan_check =
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | CheckToken | id) | id)
+ -[1]->
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | Check.id | id) | id)
+  @[0,0,1,2];
+
+# plan selection is extended to model the distribution of plan selection based on preference
+# the actual calculation of preference is given later on 
+fun react select_plan_T(n) =
+    Reduce.PlanSet{ps}.(Plan.(Pre.id | Check.T | PB.id | PrefWeight(n) | id) | id)
+  -[n]->
+    Try.(id | Cons.PlanSet{ps}.id) @[1,3];
+
+
+react select_plan_F =
+    Reduce.PlanSet{ps}.id
+  -[1]->
+    ReduceF | {ps} @[]
+    if !CheckToken in param, !Check.T in param;
+
+
+
+# if a plan per-condition is checked F, only reset its plan CheckToken
+react reset_planset =
+  Try.(id | Cons.PlanSet{ps}.(Plan.(Check.F | id) | id))
+  -[1]->
+  Try.(id | Cons.PlanSet{ps}.(Plan.(CheckToken | id) | id));
+
+
+# if a plan precondition is checked T and the preference formula is check F, then reset both CheckToken
+react reset_planset_preference_F =
+  Try.(id | Cons.PlanSet{ps}.(Plan.(Check.T | Preference.(Check.F | id) | id) | id))
+  -[1]->
+  Try.(id | Cons.PlanSet{ps}.(Plan.(CheckToken | Preference.(CheckToken | id) | id) | id));
+
+# if a plan precondition is checked T and the preference formula is check T, then reset both CheckToken and the related CalculationToke for aggregate the preference value
+react reset_planset_preference_T =
+  Try.(id | Cons.PlanSet{ps}.(Plan.(Check.T | Preference.(Check.T | id) | id) | id))
+  -[1]->
+  Try.(id | Cons.PlanSet{ps}.(Plan.(CheckToken | Preference.(CheckToken | CalculationToken | id) | id) | id));  
+
+## use the Original control to stop the over-matching of instan rules
+## problematic again as either all plans needs to have preference structure
+## or having another rule for plans without preference structure
+## atm some plan can have preference, some do not have preference
+## for now i just use Original as a quick solution
+
+
+react init_plansets_preference =
+  Plan.(Original | Pre.id | PB.id | Preference.id | id)
+  -[1]->
+  Plan.(CheckToken | Pre.id | PB.id | Preference.(CheckToken | CalculationToken | id) | id);
+
+
+react init_plansets_none_preference =
+  Plan.(Original | Pre.id | PB.id | id)
+  -[1]->
+  Plan.(CheckToken | Pre.id | PB.id | id)
+  if !Preference in param;  
+
+
+
+
+
+## Sequencing
+react reduce_seq =
+  Reduce.Seq.(id | Cons.id)
+  -[1]->
+  Seq.(Reduce.id | Cons.id);
+
+react seq_succ =
+  Reduce.Seq.(Nil | Cons.id)
+  -[1]->
+  Reduce.id;
+
+# this rule is rather artifical and purely intermedia for better structural update
+# not really reflected in Semantics?
+react seq_fail =
+  Seq.(ReduceF | Cons.id)
+  -[1]->
+  ReduceF @[];
+
+## Failure Recovery
+react try_seq =
+  Reduce.Try.(id | Cons.id)
+  -[1]->
+  Try.(Reduce.id | Cons.id);
+
+# this is where i change Try into Trys
+# as try_seq can be overmatched to keep adding Reduce on the top of Nil
+react try_succ_unique =
+  Try.(Nil | Cons.id)
+  -[1]->
+  Trys.(Nil | Cons.id);
+
+react try_succ =
+  Reduce.Trys.(Nil | Cons.id)
+  -[1]->
+  Nil @[];
+
+react try_failure =
+  Try.(ReduceF | Cons.id)
+  -[1]->
+  Reduce.id;
+
+
+
+# Concurrency
+# all instan rules
+react conc_nil_R=
+  Reduce.Conc.(L.Nil | R.id)
+  -[1]->
+  Conc.(L.Nil | R.Reduce.id);
+
+react conc_nil_L =
+  Reduce.Conc.(L.id | R.Nil)
+  -[1]->
+  Conc.(L.Reduce.id | R.Nil);
+
+react conc_L =
+  Reduce.Conc.(L.id | id)
+  -[1]->
+  Conc.(L.Reduce.id | id);
+
+react conc_R =
+  Reduce.Conc.(R.id | id)
+  -[1]->
+  Conc.(R.Reduce.id | id);
+
+react conc_succ =
+  Reduce.Conc.(L.Nil | R.Nil)
+  -[1]->
+  Nil;
+
+react conc_fail_L =
+  Conc.(L.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+react conc_fail_R =
+  Conc.(R.ReduceF | id)
+  -[1]->
+  ReduceF @[];
+
+
+# Declarative goals #
+# all instan rules
+react goal_check =
+  Reduce.Goal.(SC.id | id | FC.id)
+   -[1]->
+  Reduce.Goal.(SC.(id | Check.id) | id | FC.(id | Check.id))
+  @[0,0,1,2,2]
+  if !Check in param;
+
+react goal_suc =
+  Reduce.Goal.(SC.(id | Check.T) | id)
+  -[1]->
+  Nil @[];
+
+react goal_fail =
+  Reduce.Goal.(FC.(id | Check.T) | id)
+  -[1]->
+  Act.(Pre.F | Add.1 | Del.1) @[];
+
+react goal_init =
+  Reduce.Goal.(SC.(id | Check.F) | id | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2]
+  if !Try in param, !Trys in param;
+
+react goal_reduce =
+  Reduce.Goal.(SC.(id | Check.F) | Try.(id | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(Reduce.id | Cons.id) | FC.id);
+
+react goal_persist_nil =
+  Reduce.Goal.(SC.(id | Check.F) | Trys.(Nil | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2];
+
+react goal_persist =
+  Reduce.Goal.(SC.(id | Check.F) | Try.(ReduceF | Cons.id) | FC.(id | Check.F))
+  -[1]->
+  Goal.(SC.id | Try.(id | Cons.id) | FC.id)
+  @[0,1,1,2];
+
+
+# Agent-Level Steps
+
+# equal chance to be produced at any time
+# can be manipulated to estimate how likely a certain product is produced
+# for now put as instan rules as intention selection assumes that external events have become the intentions
+
+# a meta-layer is needed to decide which agent-level operation needs to be done/ 
+# to achieve so, we need three new rules to get the distribution
+# I introduce the following controls: 
+# ChooseAevent, AeventWeight(n)
+# ChooseAstep, AstepWeight(n)
+# ChooseAupdate, AupdateWeight(n)
+# AeventWeight(n), AstepWeight(n), and AupdateWeight(n) are put in the belief for easy matching
+
+# do A_event if there is a pending event
+fun react choose_a_event(n) = 
+     Beliefs.(AeventWeight(n) | id)
+  || Event{ps}.(id | Idle)
+  -[n]->
+     Beliefs.(AeventWeight(n) | ChooseAevent | id)
+  || Event{ps}.(id | Idle)
+  if !Reduce in ctx, !ChooseAevent in param;
+# the reason i used !Reduce is to prevent it from being applied for next agent step in the middle of intention progress, namely plan selection.
+# the reason i used !ChooseAevent is to prevent it from being repeatively applied and get stuck
+
+# do A_step if there is a progressable intention
+fun react choose_a_step(n) = 
+     Beliefs.(AstepWeight(n) | id)
+  || Intent{ps}.id
+  -[n]->
+     Beliefs.(AstepWeight(n) | ChooseAstep | id)
+  || Intent{ps}.id
+  if !Reduce in ctx, !Unprogressable in param, !ChooseAstep in param;
+
+
+# do A_update if there is an unprogressable intention
+fun react choose_a_update(n) = 
+     Beliefs.(AupdateWeight(n) | id)
+  || Intent{ps}.Unprogressable
+  -[n]->
+     Beliefs.(AupdateWeight(n) | ChooseAupdate | id)
+  || Intent{ps}.Unprogressable
+  if !Reduce in ctx, !ChooseAupdate in param;
+
+# an event is regarded as being progressed a step
+# if any agent-level rule is applied upon it.
+
+# in LUSD, an product is regarded as no longer urgent if (1) it has been packed (ie. !B(m,"packed") in param)
+# or (2) its deadline has reached to zero.
+# for the first one, i will create a token control to mark a packed product
+# the reason being is that i can use condition on !B(m,"packed") in param as B(m,"packed") is also in the intention 
+# when the action is about to be executed
+
+# for the second one, for the generality when presenting in writing paper, 
+# i will also create control token to mark a deadline-reached product 
+# so that i can use these two token in the general rules.
+
+# two token controls for deadline reached and packed
+
+fun react product_packed(es) =
+      Beliefs.(B(es,"packed") | id)
+      -[1]->
+      Beliefs.(B(es,"packed") | id | ProductPacked(es))
+      if !ProductPacked(es) in param;
+
+# since the step is deacreased when the decision of agent-level rule is decided but not yet executed
+# therefore, we have to wait until the actual rule is executed
+# to avoid so, when DSync is present, it implies that the actual agent-level rule is not yet executed
+# therefore, even if it is the case Deadline(0) now, we cannot reach to ProductDeadlineReached yet. 
+fun react product_deadline_reached_a_event(es) = 
+       Event{ps}.(id | EId(es) | Deadline(0))
+      -[1]->
+       Event{ps}.(id | EId(es) | Deadline(0) | ProductDeadlineReached(es))
+       if !ProductDeadlineReached(es) in param, !DSync in param;
+
+fun react product_deadline_reached_a_step(es) = 
+       Event{ps}.(id | EId(es) | Deadline(0))
+      -[1]->
+       Event{ps}.(id | EId(es) | Deadline(0) | ProductDeadlineReached(es))
+       if !ProductDeadlineReached(es) in param, !DSync in param;
+
+
+
+# the general rule can only be applied if the produce is not packed and its deadline is not reached
+fun react a_event(es,prs,wds) =
+     Beliefs.(ChooseAevent | id)
+  || Event{ps}.(id | Idle | EId(es) | Progress(prs) | Deadline(wds))
+  || Intentions.id
+   -[1/abs(prs+wds-6+0.1)^3]->
+     Beliefs.id
+  || Event{ps}.(id | Active | EId(es) | Progress(prs+1) | Deadline(wds))
+  || Intentions.(id | Intent{ps}.Event{ps}.1)
+  if !ProductPacked(es) in param, !ProductDeadlineReached(es) in param;
+
+fun react a_event_else(es) = 
+     Beliefs.(ChooseAevent | id)
+  || Event{ps}.(id | Idle | EId(es))
+  || Intentions.id
+   -[1]->
+     Beliefs.id
+  || Event{ps}.(id | Active | EId(es))
+  || Intentions.(id | Intent{ps}.Event{ps}.1);
+
+
+
+fun react a_step(es,prs,wds) =
+     Beliefs.(ChooseAstep | id)
+  || Event{ps}.(id | EId(es) | Progress(prs) | Deadline(wds))
+  || Intent{ps}.id
+   -[1/abs(prs+wds-6+0.1)^3]->
+     Beliefs.id
+  || Event{ps}.(id | EId(es) | Progress(prs+1) | Deadline(wds))
+  || Intent{ps}.Reduce.id
+  if !Unprogressable in param, !ProductPacked(es) in param, !ProductDeadlineReached(es) in param;
+
+fun react a_step_else(es) =
+     Beliefs.(ChooseAstep | id)
+  || Event{ps}.(id | EId(es))
+  || Intent{ps}.id
+   -[1]->
+     Beliefs.id
+  || Event{ps}.(id | EId(es))
+  || Intent{ps}.Reduce.id
+  if !Unprogressable in param;
+
+
+# in LUSD, for rule a_update, both of products is either succeeded (hence packed) or failed (hence deadline reached)
+# whether it is succeeded or failed, they will no longer be urgent. 
+# so really no need to dynamically calculated urgency value in the fun react
+fun react a_update(es,prs,wds) =
+       Beliefs.(ChooseAupdate | id)
+    || Event{ps}.(id | EId(es) | Progress(prs) | Deadline(wds))
+    || Intentions.(Intent{ps}.Unprogressable | id)
+   -[1]->
+       Beliefs.id
+    || Event{ps}.(id | EId(es) | Progress(prs+1) | Deadline(wds))
+    || Intentions.({ps} | id);
+
+
+# i need to unify the ReduceF and Nil to Unprogressable due to the lack of OR construct in param declarations
+# to do so, i have some auxiliary rules to change ReduceF and Nil to Unprogressable. 
+# also to keep track the related event either addressed in success or with failure
+# we update the related event status in the auxiliary rules. 
+# ultimately, it makes no difference to final prism checking
+
+react reducef_to_unprogressable = 
+       Event{ps}.(id | Active) 
+    || Intent{ps}.ReduceF
+    -[1]->
+       Event{ps}.(id | Failure)
+    || Intent{ps}.Unprogressable;
+
+
+react nil_to_unprogressable =
+       Event{ps}.(id | Active) 
+    || Intent{ps}.Nil
+    -[1]->
+       Event{ps}.(id | Success)
+    || Intent{ps}.Unprogressable;
+
+
+
+
+## update rules for dealine
+## after the application of each agent-level rule, the deadline of each event needs to decrease 1
+## note only one of ChooseAevent, ChooseAtep, ChooseAupdate can be present.
+fun react deadline_minue_one_A_event(wds) =
+      Event{ps}.(id | Deadline(wds))
+   -[1]->
+      Event{ps}.(id | Deadline(wds-1) | DSync)
+   if ChooseAevent in ctx, !DSync in param;
+
+fun react deadline_minue_one_A_step(wds) =
+      Event{ps}.(id | Deadline(wds))
+   -[1]->
+      Event{ps}.(id | Deadline(wds-1) | DSync)
+   if ChooseAstep in ctx, !DSync in param;
+
+fun react deadline_minue_one_A_update(wds) =
+      Event{ps}.(id | Deadline(wds))
+   -[1]->
+      Event{ps}.(id | Deadline(wds-1) | DSync)
+   if ChooseAupdate in ctx, !DSync in param;
+
+# the dsync token only be removed one one agent-level rule is actually performed
+# !Reduce is needed in case act and plan selection is done. 
+react remove_dsync_token =
+      Event{ps}.(id | DSync)
+   -[1]->
+      Event{ps}.id
+      if !ChooseAevent in ctx, !ChooseAstep in ctx, !ChooseAupdate in ctx, !Reduce in ctx;
+
+
+
+## relation rules between step time stamp, and packing effects and success/failure of a task
+## if packing still has not occurred before the deadline
+## the failure condition is generated to inform the intention to fail in the next step
+## since we decrease a step when an agent-level operation is decided and not yet done,
+## so !DSync is used to properly update the deadline reached after the decided agent-level operation is actually performed.
+fun react dealine_reached(m) =
+       Beliefs.id
+    || Event{ps}.(id | EId(m) | Active | Deadline(0))
+      -[1]->
+       Beliefs.(id | B(m,"failure"))
+    || Event{ps}.(id | EId(m) | Active | Deadline(0))
+    if !B(m,"packed") in param, !B(m,"failure") in param, !DSync in param;
+
+
+## reaction rules to turn the range of deadline into the belief atoms
+## in principle, the process of converting the range of deadline into the belief predicates
+## should happen even when events are in idle states
+
+fun react above_three(m,ds) = 
+     Event{ps}.(EId(m) | id | Deadline(ds))
+  || Beliefs.id
+    -[1]-> 
+     Event{ps}.(EId(m) | id | Deadline(ds))
+  || Beliefs.(id | B(m,"GEQ3"))
+  if !B(m,"GEQ3") in param;
+
+fun react zero_to_two(m,ds) = 
+     Event{ps}.(EId(m) | id | Deadline(ds))
+  || Beliefs.id
+    -[1]-> 
+     Event{ps}.(EId(m) | id | Deadline(ds))
+  || Beliefs.(id | B(m,"GEQ0LEQ2"))
+  if !B(m,"GEQ0LEQ2") in param;
+
+fun react above_zero(m,ds) = 
+     Event{ps}.(EId(m) | id | Deadline(ds))
+  || Beliefs.id
+    -[1]-> 
+     Event{ps}.(EId(m) | id | Deadline(ds))
+  || Beliefs.(id | B(m,"GEQ0"))
+  if !B(m,"GEQ0") in param;
+
+
+fun react range_meet(m) = 
+     Event{ps}.(EId(m) | id | Deadline(2))
+  || Beliefs.(id | B(m,"GEQ3"))
+    -[1]->
+     Event{ps}.(EId(m) | id | Deadline(2))
+  || Beliefs.id;  
+
+
+
+# preference check and calculation reaction rule
+# the new plan structure
+# Plan.(Pre.id | PB.id | PrefWeight(prefw) | Preference.(CheckToken | CalculationToken | Situation.id | PrefWeight(n)) | id)
+
+
+react preference_plan_check =
+    Plan.(id | Check.T | Preference.(CheckToken | Situation.id | id))
+ -[1]->
+    Plan.(id | Check.T | Preference.(Situation.id | Check.id | id))
+    @[0,1,1,2];
+    
+# atm, the aggregration method is to sum up the Check.T's PrefWeight
+fun react preference_calculation(m,n) =
+    Plan.(id | Check.T | Preference.(id | Check.T | PrefWeight(m) | CalculationToken) | PrefWeight(n))
+ -[1]->
+    Plan.(id | Check.T | Preference.(id | Check.T | PrefWeight(m)) | PrefWeight(m+n));     
+
+
+# the new action structure
+# Action.(Pre.id | Effect.(Add.id | Del.id | EffWeight(n)) | id)
+
+
+# # # Product Wrapping and Moving Example
+big pack_box_1_wrap_1 = Act.(Pre.1 | Effect.(Add.B(1,"packed") | Del.1 | EffWeight(1)));
+big pack_box_1_wrap_2 = Act.(Pre.1 | Effect.(Add.B(1,"packed") | Del.1 | EffWeight(1)));
+big deliver_box_1_wrap_1 = Act.(Pre.B(1,"packed") | Effect.(Add.B(1,"success") | Del.1 | EffWeight(5)) | Effect.(Add.B(1,"failure") | Del.1 | EffWeight(5)));
+big deliver_box_1_wrap_2 = Act.(Pre.B(1,"packed") | Effect.(Add.B(1,"success") | Del.1 | EffWeight(1)));
+
+big pack_box_2_wrap_1 = Act.(Pre.1 | Effect.(Add.B(2,"packed") | Del.1 | EffWeight(1)));
+big pack_box_2_wrap_2 = Act.(Pre.1 | Effect.(Add.B(2,"packed") | Del.1 | EffWeight(1)));
+big deliver_box_2_wrap_1 = Act.(Pre.B(2,"packed") | Effect.(Add.B(2,"success") | Del.1 | EffWeight(5)) | Effect.(Add.B(2,"failure") | Del.1 | EffWeight(5)));
+big deliver_box_2_wrap_2 = Act.(Pre.B(2,"packed") | Effect.(Add.B(2,"success") | Del.1 | EffWeight(1)));
+
+
+big two_products =
+        Beliefs.(AeventWeight(3) | AstepWeight(4) | AupdateWeight(3))
+     || Desires.(Event{ps1}.(EId(1) | Deadline(10) | Idle | Progress(0)) | Event{ps3}.(EId(2) | Deadline(14) | Idle | Progress(0)))
+     || Intentions.1
+     || Plans.(
+            PlanSet{ps1}.Plan.(PId(0) | Original | Pre.1 | PB.Goal.(SC.B(1,"success") | Event{ps2}.1 | FC.B(1,"failure")) |  PrefWeight(1))
+          | PlanSet{ps2}.(
+                          Plan.(PId(1) | Original| Pre.B(1,"GEQ3") | PB.(Seq.(pack_box_1_wrap_1 | Cons.deliver_box_1_wrap_1)) | Preference.(Situation.B(1,"GEQ3") | PrefWeight(1)) | PrefWeight(1))
+                        | Plan.(PId(2) | Original| Pre.B(1,"GEQ0") | PB.(Seq.(pack_box_1_wrap_2 | Cons.deliver_box_1_wrap_2)) | Preference.(Situation.B(1,"GEQ0LEQ2") | PrefWeight(1)) | PrefWeight(1)) 
+                        ) 
+          | PlanSet{ps3}.Plan.(PId(0) | Original | Pre.1 | PB.Goal.(SC.B(2,"success") | Event{ps4}.1 | FC.B(2,"failure")) | PrefWeight(1))
+          | PlanSet{ps4}.(
+                          Plan.(PId(1) | Original| Pre.B(2,"GEQ3") | PB.(Seq.(pack_box_2_wrap_1 | Cons.deliver_box_2_wrap_1)) | Preference.(Situation.B(2,"GEQ3") | PrefWeight(1)) | PrefWeight(1))
+                        | Plan.(PId(2) | Original| Pre.B(2,"GEQ0") | PB.(Seq.(pack_box_2_wrap_2 | Cons.deliver_box_2_wrap_2)) | Preference.(Situation.B(2,"GEQ0LEQ2") | PrefWeight(1)) | PrefWeight(1))
+                        ) 
+          );
+
+
+big box_1_failure = Event{ps1}.(id | EId(1) | Failure);
+big box_1_success = Event{ps1}.(id | EId(1) | Success);
+big box_2_failure = Event{ps4}.(id | EId(2) | Failure);
+big box_2_success = Event{ps4}.(id | EId(2) | Success);
+
+begin pbrs
+    # two products 1, 2
+    int m = [1:1:2];  
+    string n = {"success", "failure", "packed", "GEQ3", "GEQ0LEQ2", "GEQ0"};
+
+    # cap for the deadlines 
+    int dcap = 20;
+    # deadline excluding 0 for rule deadline_minue_one and intention_step
+    # once the deadline reached 0, it stops decreasing to negative range. 
+    int ds = [1:1:dcap];
+
+    # another one which has deadline including 0 just to match for all agent-level rules
+    int wds = [0:1:dcap];
+
+    # in SMU and SMP model, the progress really just tracks the progress
+    # so i do not need to worry about the range too much 
+    # so 20 is enough to finish an external event
+    int procap = 20;
+    int prs = [0:1:procap];
+
+    # parameters for belief atom range control
+    int geq3 = [3:1:dcap];
+    int geq0leq2 = [0:1:2]; 
+    int geq0 = [0:1:dcap];
+
+    # cap for preference
+    int pcap = 10;
+    int prefs1 = [1:1:pcap];
+    int prefs2 = [1:1:pcap];
+
+    # cap for stochastic effect weight
+    int stocap = 10;
+    int stos = [1:1:stocap];
+
+
+    # cap for agent-level operation fixed weight
+    int aocap = 10;
+    int ao = [1:1:aocap];
+
+
+    init two_products;
+    rules = [
+            # the overall philosophy of the order of instantaneous rule is rought as follows
+            # all the background non-BDI core semantics update rules come first like deadline update, tokenhousekeeping, atomic belief check, add, deletion operations, preference calculation
+            # then check rules for BDI program, like plan selectio check
+            # then actual reduction of BDI program, like action execution
+            # then special case of rules specifying how the AND/OR tree should be explored, excluding those having ReduceF
+            # then general case of rules specifying how the AND/OR tree should be explored, excluding those having ReduceF
+            # then special case of rules specifying how the AND/OR tree should be explored, for those having ReduceF
+            # then general case of rules specifying how the AND/OR tree should be explored, for those having ReduceF
+            # then agent-level rule which can be put as instantaneous, such as a_event
+            # then non-deterministic intention-level rules as normal rules such as act_T
+            # then intention_step rules as normal rules
+
+
+            # auxiliary rules to capture when the product is packed or its deadline reached
+            (
+            product_packed(m),
+            product_deadline_reached_a_event(m),
+            product_deadline_reached_a_step(m)
+            ),
+
+            # auxiliary rules to unify ReduceF and Nil to Unprogressable
+            (reducef_to_unprogressable, nil_to_unprogressable),
+
+
+            # deadline decrease synchronisation rules 
+            (deadline_minue_one_A_event(ds),
+             deadline_minue_one_A_step(ds),
+             deadline_minue_one_A_update(ds),
+             remove_dsync_token
+            ), 
+
+            # deadline range into belief atoms rules 
+            (range_meet(m)),
+            (above_three(m,geq3), 
+             zero_to_two(m,geq0leq2), 
+             above_zero(m,geq0)
+            ),
+
+
+            # change to Trys control
+            (try_succ_unique),
+
+            # add CheckToken for all initial user-specified plans    
+            (init_plansets_preference,init_plansets_none_preference),
+
+            # Plan selection token housekeeping
+            (reset_planset, reset_planset_preference_F, reset_planset_preference_T),
+
+            # Atomic set ops
+            ( check_T(m,n),
+              check_end, 
+              check_F(m,n), 
+              add_notin(m,n), 
+              add_in(m,n),
+              add_end,
+              del_in(m,n), 
+              del_notin(m,n),
+              delete_end
+            ),
+            
+            # preference check and calculation
+            (preference_calculation(prefs1,prefs2),preference_plan_check), 
+
+
+            # actually reduce the programs
+            ( reduce_event,
+              act_check,
+              select_plan_check,
+              goal_check
+            ),
+
+            # the follow-up of the above actual reduction of the programs 
+            ( act_F,
+              select_plan_F,
+              goal_suc,
+              goal_fail,
+              goal_init
+            ),
+
+            # special cases of rules specifying how the AND/OR tree is explored excluding those having ReduceF
+            (conc_succ, goal_persist_nil),
+
+            # conc_succ has to have a higher priority than both conc_nil_L and conc_nil_R           
+            (conc_nil_L, conc_nil_R), 
+
+            (seq_succ), 
+            (try_succ),
+
+            # special cases of rules to specify how the AND/OR tree should be explored for handling ReduceF
+            (goal_persist, conc_fail_L, conc_fail_R),
+            (seq_fail),
+            (try_failure),
+
+            # non-special cases of rules to specify how the AND/OR tree should be explored
+            # rule conc_L and conc_R need to be the normal rules if concurrency is ever used
+            (goal_reduce),       
+            (reduce_seq),  
+            (try_seq),
+            
+            # if packing still has not occurred before the deadline
+            # it has to have the lowest priority to allow other meaningful execution to happen within the las step
+            (dealine_reached(m)),
+
+
+            # for preference situational distribution 
+            # non-determinism of rules which have to be a normal rule to allow branching
+            {select_plan_T(prefs1), conc_L, conc_R, act_T(stos)},
+
+            # special cases of agent level operation
+            # become the event and intention selection have the same strategy
+            # so for A_event (event selection), and A_step and A_update (intention selection)
+            # for LUSD case, all agent-level rules for EId(1) and EId(2) are in the same priority level
+            {
+            a_step(m,prs,wds), 
+            a_event(m,prs,wds), 
+            a_update(m,prs,wds)
+            },
+            
+            # in LUSD case, all none-urgent cases are regarded with same weigh
+            {
+            a_step_else(m),
+            a_event_else(m)
+            },
+            # deciding which agent-level opeation should be applied
+            {choose_a_event(ao)}, 
+            {choose_a_step(ao)}, 
+            {choose_a_update(ao)}
+            ];
+            preds = {box_1_failure, box_1_success, box_2_failure, box_2_success};
+end
